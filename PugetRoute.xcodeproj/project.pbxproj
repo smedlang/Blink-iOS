@@ -1,0 +1,391 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		01A277106B421F4384CF8B38 /* NavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D83B7329E864525F313E8ABC /* NavigationView.swift */; };
+		13A0E85DD203B6D5D41BB5DF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003AF636D64761E77BEA578B /* ContentView.swift */; };
+		46800DA051459FE16D39B830 /* BikeRackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B7FFABB82388126FBDC5C90 /* BikeRackService.swift */; };
+		4B05E6B7E1ED04E3F7F04835 /* BikeInfra.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664167333E4F2E535F4FA74D /* BikeInfra.swift */; };
+		5743ADD0DC6AEAA8BD837398 /* PugetRouteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5436AD9074EBB81FBFC6E0D /* PugetRouteApp.swift */; };
+		65D5614F549C2BFA3F992E59 /* RoutingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F119D92DFBC2524B5F1E764D /* RoutingClient.swift */; };
+		74854F2F242169446C5F3D68 /* SetFavoriteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F164914FFB997DAB7D8220E3 /* SetFavoriteSheet.swift */; };
+		7C1FCB55A92372A3A42656D0 /* PolylineDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 836CD3AE5B1FD42492446E5D /* PolylineDecoder.swift */; };
+		7CB2DC634EBA48EBF1C34855 /* SavedPlacesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 284510EF91C843C8F402E36A /* SavedPlacesStore.swift */; };
+		8EDA8897B879C57AE7B25936 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249F847CC4A0CD0C5FF6AE59 /* LocationManager.swift */; };
+		9B73A8FCA94867791921EAE3 /* ItineraryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C93B76B3D17D45AEA56BB47 /* ItineraryCache.swift */; };
+		9DC82011152B711B961AFA6B /* PlaceSearchSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60CE0EF786492E20345E8E5 /* PlaceSearchSheet.swift */; };
+		AA7C357FEC02286BAF0B7076 /* BallardLocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 058907497236587A98081A52 /* BallardLocks.swift */; };
+		AF3F11B39EC0904F303F06D4 /* Sheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA97DB9C42528799837D595 /* Sheets.swift */; };
+		B040BC25E15347632EA1B408 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36927A0B0CB01F71619EC61 /* Models.swift */; };
+		B49B3458C9FC32A417962022 /* Planning.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C6150C23FCF15518EB23EA /* Planning.swift */; };
+		BC6D6AD1C189376936E2931F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9E7D565818C12ACCAC1E12C0 /* Assets.xcassets */; };
+		C5020761929ADA347C2723B7 /* ElevationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F43D1B39CF1775319FD3325 /* ElevationService.swift */; };
+		CEA1E4B8459AFF8AAC30BD5A /* ItineraryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56960FFC0CE737089284BBCA /* ItineraryViews.swift */; };
+		D8821C668206F503CBF45001 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 245FEF40A83E61FFEA87D799 /* MapView.swift */; };
+		D9E2288B875C30B551AE921D /* Solar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC0043917753CB91CB1498B /* Solar.swift */; };
+		D9E74BE1AA38C33FB7E1A5B7 /* PlaceSearchManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80A498905A9205ECE96F27B8 /* PlaceSearchManager.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		003AF636D64761E77BEA578B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		058907497236587A98081A52 /* BallardLocks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BallardLocks.swift; sourceTree = "<group>"; };
+		245FEF40A83E61FFEA87D799 /* MapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
+		249F847CC4A0CD0C5FF6AE59 /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
+		284510EF91C843C8F402E36A /* SavedPlacesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlacesStore.swift; sourceTree = "<group>"; };
+		2F43D1B39CF1775319FD3325 /* ElevationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElevationService.swift; sourceTree = "<group>"; };
+		3C93B76B3D17D45AEA56BB47 /* ItineraryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryCache.swift; sourceTree = "<group>"; };
+		56960FFC0CE737089284BBCA /* ItineraryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryViews.swift; sourceTree = "<group>"; };
+		64B0210616245D997872A9B2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		664167333E4F2E535F4FA74D /* BikeInfra.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BikeInfra.swift; sourceTree = "<group>"; };
+		7B7FFABB82388126FBDC5C90 /* BikeRackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BikeRackService.swift; sourceTree = "<group>"; };
+		80A498905A9205ECE96F27B8 /* PlaceSearchManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchManager.swift; sourceTree = "<group>"; };
+		836CD3AE5B1FD42492446E5D /* PolylineDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolylineDecoder.swift; sourceTree = "<group>"; };
+		9E7D565818C12ACCAC1E12C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A36927A0B0CB01F71619EC61 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A5436AD9074EBB81FBFC6E0D /* PugetRouteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PugetRouteApp.swift; sourceTree = "<group>"; };
+		AEC0043917753CB91CB1498B /* Solar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Solar.swift; sourceTree = "<group>"; };
+		D83B7329E864525F313E8ABC /* NavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationView.swift; sourceTree = "<group>"; };
+		E2C6150C23FCF15518EB23EA /* Planning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Planning.swift; sourceTree = "<group>"; };
+		EA67F338D84D2B2BE22FA497 /* PugetRoute.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PugetRoute.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F119D92DFBC2524B5F1E764D /* RoutingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutingClient.swift; sourceTree = "<group>"; };
+		F164914FFB997DAB7D8220E3 /* SetFavoriteSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetFavoriteSheet.swift; sourceTree = "<group>"; };
+		F60CE0EF786492E20345E8E5 /* PlaceSearchSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchSheet.swift; sourceTree = "<group>"; };
+		FBA97DB9C42528799837D595 /* Sheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sheets.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		799EB53569B0072C8565ADAC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				EA67F338D84D2B2BE22FA497 /* PugetRoute.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8B85B6B86CBB9E57D3B8C102 = {
+			isa = PBXGroup;
+			children = (
+				9ABD4DCEC80F6788252BF071 /* PugetRoute */,
+				799EB53569B0072C8565ADAC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9ABD4DCEC80F6788252BF071 /* PugetRoute */ = {
+			isa = PBXGroup;
+			children = (
+				9E7D565818C12ACCAC1E12C0 /* Assets.xcassets */,
+				058907497236587A98081A52 /* BallardLocks.swift */,
+				664167333E4F2E535F4FA74D /* BikeInfra.swift */,
+				7B7FFABB82388126FBDC5C90 /* BikeRackService.swift */,
+				003AF636D64761E77BEA578B /* ContentView.swift */,
+				2F43D1B39CF1775319FD3325 /* ElevationService.swift */,
+				64B0210616245D997872A9B2 /* Info.plist */,
+				3C93B76B3D17D45AEA56BB47 /* ItineraryCache.swift */,
+				56960FFC0CE737089284BBCA /* ItineraryViews.swift */,
+				249F847CC4A0CD0C5FF6AE59 /* LocationManager.swift */,
+				245FEF40A83E61FFEA87D799 /* MapView.swift */,
+				A36927A0B0CB01F71619EC61 /* Models.swift */,
+				D83B7329E864525F313E8ABC /* NavigationView.swift */,
+				80A498905A9205ECE96F27B8 /* PlaceSearchManager.swift */,
+				F60CE0EF786492E20345E8E5 /* PlaceSearchSheet.swift */,
+				E2C6150C23FCF15518EB23EA /* Planning.swift */,
+				836CD3AE5B1FD42492446E5D /* PolylineDecoder.swift */,
+				A5436AD9074EBB81FBFC6E0D /* PugetRouteApp.swift */,
+				F119D92DFBC2524B5F1E764D /* RoutingClient.swift */,
+				284510EF91C843C8F402E36A /* SavedPlacesStore.swift */,
+				F164914FFB997DAB7D8220E3 /* SetFavoriteSheet.swift */,
+				FBA97DB9C42528799837D595 /* Sheets.swift */,
+				AEC0043917753CB91CB1498B /* Solar.swift */,
+			);
+			path = PugetRoute;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1D101C6FFF12BB8F55C9BE6C /* PugetRoute */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 11BBDC16EF83F362E9AD228F /* Build configuration list for PBXNativeTarget "PugetRoute" */;
+			buildPhases = (
+				C3C70F1B66625EF7935711F6 /* Sources */,
+				85057E566790BF3144C521E0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PugetRoute;
+			packageProductDependencies = (
+			);
+			productName = PugetRoute;
+			productReference = EA67F338D84D2B2BE22FA497 /* PugetRoute.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		558C8DCB8F81D4AE86DC4B96 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					1D101C6FFF12BB8F55C9BE6C = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = ED73B08A39A3CB31A1A1B37A /* Build configuration list for PBXProject "PugetRoute" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 8B85B6B86CBB9E57D3B8C102;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 799EB53569B0072C8565ADAC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1D101C6FFF12BB8F55C9BE6C /* PugetRoute */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		85057E566790BF3144C521E0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BC6D6AD1C189376936E2931F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C3C70F1B66625EF7935711F6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA7C357FEC02286BAF0B7076 /* BallardLocks.swift in Sources */,
+				4B05E6B7E1ED04E3F7F04835 /* BikeInfra.swift in Sources */,
+				46800DA051459FE16D39B830 /* BikeRackService.swift in Sources */,
+				13A0E85DD203B6D5D41BB5DF /* ContentView.swift in Sources */,
+				C5020761929ADA347C2723B7 /* ElevationService.swift in Sources */,
+				9B73A8FCA94867791921EAE3 /* ItineraryCache.swift in Sources */,
+				CEA1E4B8459AFF8AAC30BD5A /* ItineraryViews.swift in Sources */,
+				8EDA8897B879C57AE7B25936 /* LocationManager.swift in Sources */,
+				D8821C668206F503CBF45001 /* MapView.swift in Sources */,
+				B040BC25E15347632EA1B408 /* Models.swift in Sources */,
+				01A277106B421F4384CF8B38 /* NavigationView.swift in Sources */,
+				D9E74BE1AA38C33FB7E1A5B7 /* PlaceSearchManager.swift in Sources */,
+				9DC82011152B711B961AFA6B /* PlaceSearchSheet.swift in Sources */,
+				B49B3458C9FC32A417962022 /* Planning.swift in Sources */,
+				7C1FCB55A92372A3A42656D0 /* PolylineDecoder.swift in Sources */,
+				5743ADD0DC6AEAA8BD837398 /* PugetRouteApp.swift in Sources */,
+				65D5614F549C2BFA3F992E59 /* RoutingClient.swift in Sources */,
+				7CB2DC634EBA48EBF1C34855 /* SavedPlacesStore.swift in Sources */,
+				74854F2F242169446C5F3D68 /* SetFavoriteSheet.swift in Sources */,
+				AF3F11B39EC0904F303F06D4 /* Sheets.swift in Sources */,
+				D9E2288B875C30B551AE921D /* Solar.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0499F101045FC9D5D903168C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		434381ADF2E10D977E7CD6A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				INFOPLIST_FILE = PugetRoute/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.bikebusseattle.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		639E4B28DEFDDFBD13B05AC2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				INFOPLIST_FILE = PugetRoute/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.bikebusseattle.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		9CCBFD7E8CC03DBBA0514E7C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		11BBDC16EF83F362E9AD228F /* Build configuration list for PBXNativeTarget "PugetRoute" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				434381ADF2E10D977E7CD6A0 /* Debug */,
+				639E4B28DEFDDFBD13B05AC2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		ED73B08A39A3CB31A1A1B37A /* Build configuration list for PBXProject "PugetRoute" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0499F101045FC9D5D903168C /* Debug */,
+				9CCBFD7E8CC03DBBA0514E7C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 558C8DCB8F81D4AE86DC4B96 /* Project object */;
+}

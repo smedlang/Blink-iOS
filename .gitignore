@@ -1,0 +1,44 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode user-specific (always per-machine, never commit)
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+*.moved-aside
+
+# Xcode build output
+build/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+Packages/
+Package.pins
+Package.resolved
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+
+# CocoaPods (not currently used but future-proof)
+Pods/
+
+# Carthage (not used but future-proof)
+Carthage/Build/
+
+# fastlane (not used but future-proof)
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Misc
+*.swp
+*~
+
+# Local runbook — keep out of the public repo
+RELEASE.md
