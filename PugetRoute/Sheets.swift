@@ -152,34 +152,15 @@ struct PreferencesSheet: View {
                 // fixed at 18 mph in that mode and pace doesn't apply.
                 if bikeKind == .standard {
                     Section {
-                        ForEach(BikePace.allCases) { pace in
-                            HStack {
-                                Image(systemName: paceIcon(for: pace))
-                                    .foregroundColor(.accentColor)
-                                    .frame(width: 28)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 6) {
-                                        Text(pace.label).font(.body).bold()
-                                        Text("\(pace.mph, specifier: "%g") mph")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Text(pace.blurb)
-                                        .font(.caption).foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                if bikePace == pace {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.accentColor)
-                                }
+                        Picker("Pace", selection: $bikePace) {
+                            ForEach(BikePace.allCases) { pace in
+                                Text("\(Int(pace.mph.rounded()))")
+                                    .tag(pace)
                             }
-                            .contentShape(Rectangle())
-                            .onTapGesture { bikePace = pace }
                         }
+                        .pickerStyle(.segmented)
                     } header: {
-                        Text("Bike pace")
-                    } footer: {
-                        Text("Affects estimated bike times, which buses you can catch, and the live ETA during navigation.")
+                        Text("Bike pace (mph)")
                     }
                 }
             }
@@ -193,15 +174,6 @@ struct PreferencesSheet: View {
                     }
                 }
             }
-        }
-    }
-
-    private func paceIcon(for pace: BikePace) -> String {
-        switch pace {
-        case .casual:   return "tortoise"
-        case .moderate: return "bicycle"
-        case .brisk:    return "hare"
-        case .fast:     return "bolt"
         }
     }
 
