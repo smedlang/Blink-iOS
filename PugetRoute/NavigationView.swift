@@ -18,6 +18,16 @@ struct TripNavigationView: View {
     private let initialItinerary: Itinerary
     private let mode: TripMode
     private let preference: RoutePreference
+    /// True when launched from a trip whose "from" isn't the user's
+    /// current GPS location — there's nothing useful for live nav to
+    /// track. In preview mode we skip the GPS subscription (so no
+    /// startLiveUpdates, no battery cost), and the gating that already
+    /// keys off `location.lastLocation` (recomputeLiveRemaining,
+    /// tryAutoAdvance, off-route detection) naturally short-circuits.
+    /// The user can still scrub through steps manually via the
+    /// banner chevrons, see the route polyline on the map, and read
+    /// the planned ETA on the bottom card.
+    private let isPreview: Bool
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var location = LocationManager()
@@ -142,10 +152,16 @@ struct TripNavigationView: View {
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
-    init(itinerary: Itinerary, mode: TripMode, preference: RoutePreference) {
+    init(
+        itinerary: Itinerary,
+        mode: TripMode,
+        preference: RoutePreference,
+        isPreview: Bool = false
+    ) {
         self.initialItinerary = itinerary
         self.mode = mode
         self.preference = preference
+        self.isPreview = isPreview
         self._itinerary = State(initialValue: itinerary)
         self.originForRealtimeRefresh = itinerary.legs.first?.from.coordinate
             ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
@@ -220,11 +236,21 @@ struct TripNavigationView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: isFollowingUser)
         .onAppear {
-            location.requestWhenInUse()
-            location.startLiveUpdates()
+            // Preview mode: don't request location permission and don't
+            // start the GPS updates. Everything that depends on a live
+            // fix (recomputeLiveRemaining, tryAutoAdvance, off-route
+            // detection) already gates on location.lastLocation being
+            // non-nil, so leaving it nil cleanly degrades the view into
+            // a static read of the planned route.
+            if !isPreview {
+                location.requestWhenInUse()
+                location.startLiveUpdates()
+            }
         }
         .onDisappear {
-            location.stopLiveUpdates()
+            if !isPreview {
+                location.stopLiveUpdates()
+            }
         }
         // Fetch bike racks near the trip's final destination, once,
         // at start of nav. We don't refresh — destination is fixed

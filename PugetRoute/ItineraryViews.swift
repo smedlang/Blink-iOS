@@ -347,6 +347,13 @@ struct ItineraryDetailView: View {
     let itinerary: Itinerary
     let mode: TripMode
     let preference: RoutePreference
+    /// True when the trip's "from" is the user's current GPS location,
+    /// so launching live navigation makes sense (the user can actually
+    /// follow the directions from here). False when planning from a
+    /// non-current origin (e.g. "Capitol Hill → Golden Gardens" from
+    /// the couch at work) — there's no GPS anchor for nav, so we
+    /// downgrade the action to a Preview-mode read of the steps.
+    var isAtTripStart: Bool = true
     @Environment(\.dismiss) private var dismiss
     @State private var showNavigation = false
 
@@ -376,45 +383,94 @@ struct ItineraryDetailView: View {
                 }
             }
             .fullScreenCover(isPresented: $showNavigation) {
-                TripNavigationView(itinerary: itinerary, mode: mode, preference: preference)
+                TripNavigationView(
+                    itinerary: itinerary,
+                    mode: mode,
+                    preference: preference,
+                    isPreview: !isAtTripStart
+                )
             }
         }
     }
 
     private var goButton: some View {
-        // Past trips: render the button greyed out and inert, with a
-        // small helper line below explaining why. Viewing the detail
-        // sheet is still useful (the user might be inspecting the
-        // schedule), but starting navigation against a trip that's
-        // already arrived would be misleading.
+        // Three states for the primary action button:
+        //
+        // 1. Past trip (`itinerary.isPast`)        — gray, disabled,
+        //    "Trip has already departed."
+        // 2. Not-at-start (`!isAtTripStart`)       — outlined accent,
+        //    "Preview steps", launches navigation in preview mode
+        //    (no GPS, no auto-advance) so the user can scrub through
+        //    the route without pretending they're riding it.
+        // 3. Default (at start, not past)          — filled accent,
+        //    "GO", launches live navigation with GPS tracking.
+        //
+        // All three render the same shape and height so the layout
+        // doesn't shift between alternates as the user picks
+        // different itineraries.
         let isPast = itinerary.isPast
+        let isPreview = !isPast && !isAtTripStart
         return VStack(alignment: .leading, spacing: 6) {
             Button {
                 if !isPast { showNavigation = true }
             } label: {
                 HStack {
-                    Image(systemName: isPast ? "clock.badge.xmark" : "location.north.line.fill")
-                    Text(isPast ? "Trip has already departed" : "GO").bold()
+                    Image(systemName: buttonIcon(isPast: isPast, isPreview: isPreview))
+                    Text(buttonText(isPast: isPast, isPreview: isPreview)).bold()
                 }
                 .font(.title3)
-                .foregroundColor(.white)
+                .foregroundColor(buttonForeground(isPast: isPast, isPreview: isPreview))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(
-                    (isPast ? Color.gray : Color.accentColor),
-                    in: RoundedRectangle(cornerRadius: 12)
-                )
+                .background(buttonBackground(isPast: isPast, isPreview: isPreview))
             }
             .buttonStyle(.plain)
             .disabled(isPast)
-            // Hint for the past-trip case so the disabled state isn't
-            // mysterious. Keeps the explanation in-context rather than
-            // requiring the user to deduce it from the icon.
+            // Hint text under the button when the state isn't the
+            // expected GO case. Keeps the explanation in-context
+            // rather than requiring the user to deduce it from the
+            // icon alone.
             if isPast {
                 Text("You're viewing this trip's schedule. To plan a new trip, adjust the time.")
                     .font(.caption)
                     .foregroundColor(.secondary)
+            } else if isPreview {
+                Text("You're not at the trip's starting point. Preview the steps below — open the app from your start location when you're ready to navigate.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
+        }
+    }
+
+    private func buttonIcon(isPast: Bool, isPreview: Bool) -> String {
+        if isPast    { return "clock.badge.xmark" }
+        if isPreview { return "eye.fill" }
+        return "location.north.line.fill"
+    }
+
+    private func buttonText(isPast: Bool, isPreview: Bool) -> String {
+        if isPast    { return "Trip has already departed" }
+        if isPreview { return "Preview steps  ›››" }
+        return "GO"
+    }
+
+    private func buttonForeground(isPast: Bool, isPreview: Bool) -> Color {
+        if isPast    { return .white }
+        if isPreview { return .accentColor }
+        return .white
+    }
+
+    @ViewBuilder
+    private func buttonBackground(isPast: Bool, isPreview: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12)
+        if isPast {
+            shape.fill(Color.gray)
+        } else if isPreview {
+            shape
+                .fill(Color.accentColor.opacity(0.08))
+                .overlay(shape.strokeBorder(Color.accentColor, lineWidth: 1.5))
+        } else {
+            shape.fill(Color.accentColor)
         }
     }
 

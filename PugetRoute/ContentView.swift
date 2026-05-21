@@ -240,7 +240,19 @@ struct ContentView: View {
             .presentationDetents([.medium, .large])
         }
         .sheet(item: $detailItinerary) { it in
-            ItineraryDetailView(itinerary: it, mode: mode, preference: preference)
+            ItineraryDetailView(
+                itinerary: it,
+                mode: mode,
+                preference: preference,
+                // Live nav only makes sense when the trip's start is
+                // where the user actually is. `fromQuery == "Your
+                // location"` is the signal — set whenever the user
+                // picks "Use my location" from the place-search sheet
+                // (and on first launch by default). Any other origin
+                // means the user is planning ahead from a different
+                // location; detail view downgrades GO to "Preview steps".
+                isAtTripStart: fromQuery == "Your location"
+            )
                 .presentationDetents([.height(260), .medium, .large])
                 .presentationDragIndicator(.visible)
                 // Keep the map pannable/zoomable while the sheet is at the
