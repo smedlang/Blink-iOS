@@ -818,6 +818,20 @@ struct TripNavigationView: View {
             let b = CLLocation(latitude: pts[i + 1].latitude, longitude: pts[i + 1].longitude)
             remainingMeters += a.distance(from: b)
         }
+        // Off-route floor: `closestVertex` picks the geographically nearest
+        // polyline vertex, which on final approach can be the leg's end
+        // vertex even when the user still has meaningful distance to go
+        // (route curves back near itself, or user shortcuts across the
+        // planned path). In that case the arc-length sum above is ~0 and
+        // the bottom card flashes "0 min" while the user is still 800 m
+        // out. Clamping remainingMeters to ≥ crow-flies distance to the
+        // leg's destination fixes that without breaking the on-route
+        // case (on a curved route, arc-length ≥ crow-flies by definition,
+        // so max() is a no-op when the snap is correct).
+        let crowFliesToEnd = user.distance(from: CLLocation(
+            latitude: leg.to.lat, longitude: leg.to.lon
+        ))
+        remainingMeters = max(remainingMeters, crowFliesToEnd)
         // Speed: bike pace if we're on a bike leg, walking pace otherwise
         // (walk legs are mostly transfers, so a fixed brisk-walk speed is
         // close enough — we don't ask the user for their walking pace).
