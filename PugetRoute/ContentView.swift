@@ -170,13 +170,28 @@ struct ContentView: View {
             // Pull bike-rack annotations for every bike-leg endpoint
             // in the selected itinerary. Cancelled and re-fired by
             // SwiftUI whenever the user taps a different itinerary
-            // (the .id keys it). Empty array on no-selection or on
-            // any fetch failure — racks are decorative, never gating.
-            guard let it = selectedItinerary else {
+            // (the .id keys it). Empty array on no-selection, on
+            // Lime mode (the user isn't parking their own bike, they
+            // drop the Lime within the geofence), or on any fetch
+            // failure — racks are decorative, never gating.
+            guard let it = selectedItinerary, !useLime else {
                 bikeRacks = []
                 return
             }
             bikeRacks = await BikeRackService.racksForBikeLegEndpoints(it)
+        }
+        // Lime toggle flipping has to invalidate the rack annotations
+        // — without this, switching mid-session leaves stale racks on
+        // (or missing from) the map. SwiftUI doesn't otherwise re-fire
+        // the .task above when only useLime changes (it's keyed on
+        // selectedItinerary). On-toggle: clear if Lime is now on; if
+        // Lime is now off and we have a selected itinerary, refetch.
+        .onChange(of: useLime) { _, nowLime in
+            if nowLime {
+                bikeRacks = []
+            } else if let it = selectedItinerary {
+                Task { bikeRacks = await BikeRackService.racksForBikeLegEndpoints(it) }
+            }
         }
         // Clear any stuck error message whenever the user opens an
         // input sheet. Without this, an earlier "No routes found"
