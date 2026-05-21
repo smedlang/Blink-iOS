@@ -124,11 +124,7 @@ struct PreferencesSheet: View {
                             Image(systemName: kind.icon)
                                 .foregroundColor(.accentColor)
                                 .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(kind.label).font(.body).bold()
-                                Text(kind.blurb)
-                                    .font(.caption).foregroundColor(.secondary)
-                            }
+                            Text(kind.label).font(.body).bold()
                             Spacer()
                             if bikeKind == kind {
                                 Image(systemName: "checkmark")
@@ -159,6 +155,11 @@ struct PreferencesSheet: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                        // Tint the selected segment with the app's
+                        // accent color so the picker matches the
+                        // other accent-tinted controls on the page
+                        // (checkmarks, icons, Lime toggle pill).
+                        .tint(.accentColor)
                     } header: {
                         Text("Bike pace (mph)")
                     }
@@ -187,7 +188,7 @@ struct PreferencesSheet: View {
     private func blurb(for p: RoutePreference) -> String {
         switch p {
         case .fastest:
-            return "Minimum total travel time. Bike legs still prefer protected lanes."
+            return "Minimize travel time while still prioritizing safe paths"
         case .lessActive:
             return "Use transit more, bike or walk less even if it takes longer."
         }
