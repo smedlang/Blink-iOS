@@ -1044,11 +1044,48 @@ extension Leg {
     var startDate: Date { Date(timeIntervalSince1970: TimeInterval(startTime) / 1000) }
     var endDate:   Date { Date(timeIntervalSince1970: TimeInterval(endTime)   / 1000) }
 
+    /// Realtime-adjusted boarding time. For transit legs with a
+    /// populated `departureDelay` (seconds, from the proxy's
+    /// 30 s realtime refresh loop), this is `startDate` shifted by
+    /// the delay — so a bus that becomes 5 min late shows that
+    /// 5 min later. For walk/bike legs and transit legs without a
+    /// realtime delay populated, this equals `startDate`.
+    var effectiveStartDate: Date {
+        let delaySec = TimeInterval(departureDelay ?? 0)
+        return Date(timeIntervalSince1970: TimeInterval(startTime) / 1000 + delaySec)
+    }
+
+    /// Realtime-adjusted alight / arrival time. Same shape as
+    /// `effectiveStartDate`, using `arrivalDelay` and `endTime`. Used by
+    /// the live-nav bottom card so the "X min remaining" countdown on
+    /// the bus stays honest as delays accumulate mid-ride.
+    var effectiveEndDate: Date {
+        let delaySec = TimeInterval(arrivalDelay ?? 0)
+        return Date(timeIntervalSince1970: TimeInterval(endTime) / 1000 + delaySec)
+    }
+
     /// "4:54 PM" — hour+minute only.
     var startTimeString: String {
         let f = DateFormatter()
         f.dateFormat = "h:mm a"
         return f.string(from: startDate)
+    }
+
+    /// Hour+minute formatted `effectiveStartDate` (boarding time with
+    /// realtime delay folded in). Same format as `startTimeString` so
+    /// the swap is visually drop-in at display sites.
+    var effectiveStartTimeString: String {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f.string(from: effectiveStartDate)
+    }
+
+    /// Hour+minute formatted `effectiveEndDate` (alighting time with
+    /// realtime delay folded in).
+    var effectiveEndTimeString: String {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f.string(from: effectiveEndDate)
     }
 
     /// Boarding line for a transit leg, e.g.

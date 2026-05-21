@@ -485,7 +485,7 @@ private struct LegDetailRow: View {
                     // Board / ride / alight block
                     Label {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("Board at \(leg.startTimeString)").bold()
+                            Text("Board at \(leg.effectiveStartTimeString)").bold()
                             Text(leg.from.name).foregroundColor(.secondary)
                             // Alternative-route departures. For each
                             // alternate bus (1 Line + 2 Line + ...),
@@ -518,7 +518,7 @@ private struct LegDetailRow: View {
 
                     Label {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("Get off at \(leg.endTimeString)").bold()
+                            Text("Get off at \(leg.effectiveEndTimeString)").bold()
                             Text(leg.to.name).foregroundColor(.secondary)
                         }
                     } icon: {

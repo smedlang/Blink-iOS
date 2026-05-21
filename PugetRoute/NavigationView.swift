@@ -450,7 +450,7 @@ struct TripNavigationView: View {
                     Text(leg.to.name)
                         .font(.headline).bold().foregroundColor(.white)
                         .lineLimit(2)
-                    Text("arriving \(leg.endTimeString)")
+                    Text("arriving \(leg.effectiveEndTimeString)")
                         .font(.caption).foregroundColor(.white.opacity(0.85))
                 }
                 Spacer()
@@ -722,7 +722,11 @@ struct TripNavigationView: View {
     private func tryAutoAdvance() {
         guard let leg = currentLeg else { return }
         if leg.isTransit {
-            if now.timeIntervalSince1970 * 1000 > Double(leg.endTime) {
+            // Use the realtime-adjusted end so a delayed bus doesn't
+            // get auto-advanced past while the user is still on it.
+            // arrivalDelay is refreshed every 30 s by the realtime
+            // poll; effectiveEndDate folds it in.
+            if now >= leg.effectiveEndDate {
                 advance()
             }
             return
@@ -1284,7 +1288,11 @@ struct TripNavigationView: View {
         if nowSec < legStart, !leg.isTransit, let est = leg.estimatedDurationSeconds {
             return max(0, Double(est))
         }
-        return max(0, Double(leg.endTime) / 1000 - nowSec)
+        // Use the realtime-adjusted end so a bus that becomes more
+        // delayed mid-ride pushes our "X min remaining" forward. The
+        // realtime-refresh loop (refreshRealtimeForTransitLegs) updates
+        // arrivalDelay every 30 s; effectiveEndDate folds it in.
+        return max(0, leg.effectiveEndDate.timeIntervalSince1970 - nowSec)
     }
 
     private var arrivalTimeString: String {
@@ -1304,7 +1312,10 @@ struct TripNavigationView: View {
     }
 
     private func boardCountdown(leg: Leg) -> String {
-        let secs = Int(Double(leg.startTime) / 1000 - now.timeIntervalSince1970)
+        // effectiveStartDate folds in any populated departureDelay
+        // (refreshed every 30 s) so the countdown reflects whatever
+        // delay the realtime feed last reported.
+        let secs = Int(leg.effectiveStartDate.timeIntervalSince1970 - now.timeIntervalSince1970)
         if secs <= 0 { return "Boarding now" }
         if secs < 60 { return "in \(secs) sec" }
         return "in \(secs / 60) min"
