@@ -356,6 +356,7 @@ struct ItineraryDetailView: View {
     var isAtTripStart: Bool = true
     @Environment(\.dismiss) private var dismiss
     @State private var showNavigation = false
+    @State private var showPreviewSteps = false
 
     var body: some View {
         NavigationStack {
@@ -390,6 +391,9 @@ struct ItineraryDetailView: View {
                     isPreview: !isAtTripStart
                 )
             }
+            .sheet(isPresented: $showPreviewSteps) {
+                PreviewStepsList(itinerary: itinerary)
+            }
         }
     }
 
@@ -399,9 +403,9 @@ struct ItineraryDetailView: View {
         // 1. Past trip (`itinerary.isPast`)        — gray, disabled,
         //    "Trip has already departed."
         // 2. Not-at-start (`!isAtTripStart`)       — outlined accent,
-        //    "Preview steps", launches navigation in preview mode
-        //    (no GPS, no auto-advance) so the user can scrub through
-        //    the route without pretending they're riding it.
+        //    "Preview ›››", no icon. Inert label — the actual
+        //    step list is rendered just below by ForEach over the
+        //    legs, so this button is purely a state indicator.
         // 3. Default (at start, not past)          — filled accent,
         //    "GO", launches live navigation with GPS tracking.
         //
@@ -412,10 +416,16 @@ struct ItineraryDetailView: View {
         let isPreview = !isPast && !isAtTripStart
         return VStack(alignment: .leading, spacing: 6) {
             Button {
-                if !isPast { showNavigation = true }
+                // Preview opens a flat step list in a sheet; live nav
+                // launch only happens in the at-start, non-past case.
+                if isPast { return }
+                if isPreview { showPreviewSteps = true }
+                else        { showNavigation = true }
             } label: {
                 HStack {
-                    Image(systemName: buttonIcon(isPast: isPast, isPreview: isPreview))
+                    if let icon = buttonIcon(isPast: isPast, isPreview: isPreview) {
+                        Image(systemName: icon)
+                    }
                     Text(buttonText(isPast: isPast, isPreview: isPreview)).bold()
                 }
                 .font(.title3)
@@ -437,15 +447,15 @@ struct ItineraryDetailView: View {
         }
     }
 
-    private func buttonIcon(isPast: Bool, isPreview: Bool) -> String {
+    private func buttonIcon(isPast: Bool, isPreview: Bool) -> String? {
         if isPast    { return "clock.badge.xmark" }
-        if isPreview { return "eye.fill" }
+        if isPreview { return nil }
         return "location.north.line.fill"
     }
 
     private func buttonText(isPast: Bool, isPreview: Bool) -> String {
         if isPast    { return "Trip has already departed" }
-        if isPreview { return "Preview steps  ›››" }
+        if isPreview { return "Preview  ›››" }
         return "GO"
     }
 
@@ -499,6 +509,145 @@ struct ItineraryDetailView: View {
         let f = DateFormatter()
         f.dateFormat = "h:mm a"
         return f.string(from: itinerary.endDate)
+    }
+}
+
+/// Flat, scrollable list of every maneuver in an itinerary —
+/// presented as a sheet when the user taps "Preview ›››" from the
+/// trip-detail view (i.e. when the trip's "from" isn't their
+/// current location and live nav doesn't apply).
+///
+/// Rendering:
+/// - One Section per leg, headed by leg type + duration.
+/// - Walk / bike legs render each `WalkStep` as a row with its
+///   turn icon, instruction ("Turn left onto Federal Ave E"),
+///   and step distance.
+/// - Transit legs render three rows: board (with effective
+///   departure time + boarding stop), ride (duration + intermediate
+///   stop count), alight (with effective arrival time + stop name).
+/// - Times use the realtime-adjusted `effectiveStart/EndTimeString`
+///   so a delayed bus shows the delayed time, same as live nav.
+private struct PreviewStepsList: View {
+    let itinerary: Itinerary
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(Array(itinerary.legs.enumerated()), id: \.offset) { idx, leg in
+                    Section {
+                        legContent(leg)
+                    } header: {
+                        legHeader(leg)
+                    }
+                }
+            }
+            .navigationTitle("Steps")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func legHeader(_ leg: Leg) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: iconName(for: leg))
+                .foregroundColor(.accentColor)
+            Text(headerText(for: leg))
+        }
+    }
+
+    @ViewBuilder
+    private func legContent(_ leg: Leg) -> some View {
+        if leg.isTransit {
+            transitRows(leg)
+        } else if let steps = leg.steps, !steps.isEmpty {
+            ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+                stepRow(step)
+            }
+        } else {
+            // No detailed steps returned (rare — usually short walk
+            // legs near transit stops). Fall back to the leg's
+            // own summary line so the section isn't empty.
+            HStack {
+                Text(leg.from.name.isEmpty ? "Start" : leg.from.name)
+                Spacer()
+                if let d = leg.distanceString {
+                    Text(d).font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func stepRow(_ step: WalkStep) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: step.icon)
+                .frame(width: 22)
+                .foregroundColor(.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(step.instruction)
+                    .font(.body)
+                if step.distance >= 1 {
+                    Text(formatStepDistance(step.distance))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func transitRows(_ leg: Leg) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Board at \(leg.effectiveStartTimeString)").bold()
+            Text(leg.from.name).font(.caption).foregroundColor(.secondary)
+        }
+        Text("Ride \(leg.durationMinutes) min")
+            .font(.caption).foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Get off at \(leg.effectiveEndTimeString)").bold()
+            Text(leg.to.name).font(.caption).foregroundColor(.secondary)
+        }
+    }
+
+    private func iconName(for leg: Leg) -> String {
+        switch leg.mode {
+        case "BICYCLE", "BICYCLE_RENT": return "bicycle"
+        case "WALK":                    return "figure.walk"
+        case "BUS":                     return "bus.fill"
+        case "RAIL", "TRAM", "SUBWAY":  return "tram.fill"
+        case "FERRY":                   return "ferry.fill"
+        default:                        return "arrow.right"
+        }
+    }
+
+    private func headerText(for leg: Leg) -> String {
+        if leg.isTransit { return leg.displayName }
+        switch leg.mode {
+        case "BICYCLE", "BICYCLE_RENT":
+            let label = leg.isRental ? "Lime bike" : "Bike"
+            return "\(label) · \(leg.durationMinutes) min"
+        case "WALK":
+            return "Walk · \(leg.durationMinutes) min"
+        default:
+            return leg.displayName
+        }
+    }
+
+    /// Step distance shown under the instruction — feet for short
+    /// hops, miles otherwise. Mirrors the formatter in
+    /// NavigationView's banner but lives here so this view doesn't
+    /// reach into nav internals.
+    private func formatStepDistance(_ meters: Double) -> String {
+        let feet = meters * 3.28084
+        if feet < 300 { return "\(Int((feet / 10).rounded()) * 10) ft" }
+        let miles = meters / 1609.34
+        return miles < 0.1 ? String(format: "%.2f mi", miles) : String(format: "%.1f mi", miles)
     }
 }
 
