@@ -426,16 +426,11 @@ struct ItineraryDetailView: View {
             }
             .buttonStyle(.plain)
             .disabled(isPast)
-            // Hint text under the button when the state isn't the
-            // expected GO case. Keeps the explanation in-context
-            // rather than requiring the user to deduce it from the
-            // icon alone.
+            // Past-trip hint only — the disabled gray state isn't
+            // obvious on its own. The Preview state stands on its
+            // own with the button label + outlined style.
             if isPast {
                 Text("You're viewing this trip's schedule. To plan a new trip, adjust the time.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } else if isPreview {
-                Text("You're not at the trip's starting point. Preview the steps below — open the app from your start location when you're ready to navigate.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
