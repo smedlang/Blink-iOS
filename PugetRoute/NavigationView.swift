@@ -95,6 +95,26 @@ struct TripNavigationView: View {
     @State private var rerouteCount: Int = 0
     @State private var lastRerouteAt: Date? = nil
 
+    /// Bike racks near the trip's final destination, fetched once at
+    /// startup. The map only renders them when the user gets close
+    /// enough that they're about to need to lock up (see
+    /// `racksVisibleProximityMeters` below). Empty array on Lime
+    /// trips (user drops the rental within the geofence; doesn't need
+    /// own-bike parking) and on trips with no bike leg at all.
+    @State private var nearbyDestinationRacks: [BikeRack] = []
+
+    /// Show the rack pins once the user is within this distance of
+    /// the trip's final destination. Short enough that the racks
+    /// don't clutter the map for most of the ride; far enough back
+    /// that the rider sees them with time to plan where to lock up.
+    private let racksVisibleProximityMeters: Double = 300
+
+    /// Only fetch racks within this radius of the destination. Riders
+    /// want to lock up close, not walk 200m from a rack to their
+    /// actual destination. Matches the `primaryRadius` in
+    /// BikeRackService.
+    private let racksFetchRadiusMeters: Int = 150
+
     /// Camera-follow state. True = first-person follow (the default during
     /// navigation). Flipped to false by the map view when the user
     /// pinches/pans/rotates manually, and back to true by the recenter
@@ -138,6 +158,20 @@ struct TripNavigationView: View {
         itinerary.legs.last?.to.coordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
     }
 
+    /// Racks to render on the live nav map right now. Empty unless the
+    /// user is within `racksVisibleProximityMeters` of the trip's
+    /// final destination — that's when "where do I lock up" becomes a
+    /// useful question. Also empty in Lime mode and on transit-only
+    /// trips (handled by the .task fetch never populating
+    /// `nearbyDestinationRacks` in those cases).
+    private var racksToDisplay: [BikeRack] {
+        guard !nearbyDestinationRacks.isEmpty,
+              let user = location.lastLocation,
+              let dest = itinerary.legs.last?.to.coordinate else { return [] }
+        let d = user.distance(from: CLLocation(latitude: dest.latitude, longitude: dest.longitude))
+        return d <= racksVisibleProximityMeters ? nearbyDestinationRacks : []
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             NavigationMapView(
@@ -145,6 +179,7 @@ struct TripNavigationView: View {
                 userLocation: location.lastLocation,
                 heading: location.heading,
                 currentLegIndex: currentLegIndex,
+                bikeRacks: racksToDisplay,
                 isFollowing: $isFollowingUser
             )
             .ignoresSafeArea()
@@ -190,6 +225,19 @@ struct TripNavigationView: View {
         }
         .onDisappear {
             location.stopLiveUpdates()
+        }
+        // Fetch bike racks near the trip's final destination, once,
+        // at start of nav. We don't refresh — destination is fixed
+        // for the trip, and the rack data only changes on graph
+        // rebuilds. Skipped for Lime trips and for trips with no
+        // own-bike leg (transit-only).
+        .task {
+            guard !useLime,
+                  itinerary.legs.contains(where: { $0.mode == "BICYCLE" }),
+                  let dest = itinerary.legs.last?.to.coordinate else { return }
+            nearbyDestinationRacks = await BikeRackService.fetchAt(
+                dest, radius: racksFetchRadiusMeters
+            )
         }
         .onReceive(ticker) { t in
             now = t
@@ -1418,6 +1466,10 @@ struct NavigationMapView: UIViewRepresentable {
     let userLocation: CLLocation?
     let heading: CLHeading?
     let currentLegIndex: Int
+    /// Bike racks to render as map annotations. Caller (TripNavigationView)
+    /// passes an empty array unless the user is approaching the trip's
+    /// destination — see `racksToDisplay` there.
+    var bikeRacks: [BikeRack] = []
     @Binding var isFollowing: Bool
 
     func makeUIView(context: Context) -> MKMapView {
@@ -1439,9 +1491,15 @@ struct NavigationMapView: UIViewRepresentable {
         context.coordinator.isFollowingBinding = $isFollowing
 
         map.removeOverlays(map.overlays)
-        // Drop any previous bus-stop annotations before re-adding for the
-        // current itinerary. Don't touch MKUserLocation.
-        map.removeAnnotations(map.annotations.filter { $0 is TransitStopAnnotation })
+        // Drop any previous bus-stop AND bike-rack annotations before
+        // re-adding. Bus-stop set is itinerary-driven so it only
+        // changes on leg progression; bike-rack set toggles between
+        // empty and populated as the user approaches the destination,
+        // so removing+re-adding every update is the simplest path.
+        // Don't touch MKUserLocation.
+        map.removeAnnotations(
+            map.annotations.filter { $0 is TransitStopAnnotation || $0 is BikeRackAnnotation }
+        )
 
         for (idx, leg) in itinerary.legs.enumerated() {
             let pts = PolylineDecoder.decode(leg.legGeometry.points)
@@ -1500,6 +1558,22 @@ struct NavigationMapView: UIViewRepresentable {
                     map.addAnnotation(stop)
                 }
             }
+        }
+
+        // Bike-rack pins near the trip's final destination. Caller
+        // passes an empty array unless the user is close enough that
+        // "where to lock up" is the next decision (see
+        // TripNavigationView.racksToDisplay). Reuses the same
+        // BikeRackAnnotation type the trip-detail map uses, so the
+        // rendering and callout behavior match.
+        for rack in bikeRacks {
+            let ann = BikeRackAnnotation()
+            ann.coordinate = rack.coordinate
+            ann.title = rack.name?.isEmpty == false ? rack.name : "Bike parking"
+            let summary = rack.summary
+            if !summary.isEmpty { ann.subtitle = summary }
+            ann.rack = rack
+            map.addAnnotation(ann)
         }
 
         // Only force the first-person camera while follow mode is on. When
@@ -1625,16 +1699,22 @@ struct NavigationMapView: UIViewRepresentable {
             return r
         }
 
-        // Render bus-stop annotations as small dots so the user can see
-        // every stop along the bus's path — boarding, alighting, and the
-        // intermediate stops in between. Delegates to the shared builder
-        // in ItineraryMapView.Coordinator so the two maps stay visually
-        // identical without each one re-implementing the three-style dot.
+        // Render bus-stop and bike-rack annotations using the shared
+        // builders in ItineraryMapView.Coordinator so the live-nav map
+        // and the trip-detail map look identical without each one
+        // re-implementing the dot styles.
         func mapView(_ map: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-            guard let stop = annotation as? TransitStopAnnotation else { return nil }
-            return ItineraryMapView.Coordinator.makeStopAnnotationView(
-                for: stop, on: map, reuseId: "transit-stop-nav"
-            )
+            if let stop = annotation as? TransitStopAnnotation {
+                return ItineraryMapView.Coordinator.makeStopAnnotationView(
+                    for: stop, on: map, reuseId: "transit-stop-nav"
+                )
+            }
+            if let rack = annotation as? BikeRackAnnotation {
+                return ItineraryMapView.Coordinator.makeBikeRackAnnotationView(
+                    for: rack, on: map
+                )
+            }
+            return nil
         }
     }
 }
