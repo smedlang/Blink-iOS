@@ -19,6 +19,7 @@
 		8EDA8897B879C57AE7B25936 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249F847CC4A0CD0C5FF6AE59 /* LocationManager.swift */; };
 		9B73A8FCA94867791921EAE3 /* ItineraryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C93B76B3D17D45AEA56BB47 /* ItineraryCache.swift */; };
 		9DC82011152B711B961AFA6B /* PlaceSearchSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60CE0EF786492E20345E8E5 /* PlaceSearchSheet.swift */; };
+		A2BE69F18DEC798109FDAA21 /* TransitBrand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80CDFEC6D645188D72238BCC /* TransitBrand.swift */; };
 		AA7C357FEC02286BAF0B7076 /* BallardLocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 058907497236587A98081A52 /* BallardLocks.swift */; };
 		AF3F11B39EC0904F303F06D4 /* Sheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA97DB9C42528799837D595 /* Sheets.swift */; };
 		B040BC25E15347632EA1B408 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36927A0B0CB01F71619EC61 /* Models.swift */; };
@@ -44,6 +45,7 @@
 		664167333E4F2E535F4FA74D /* BikeInfra.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BikeInfra.swift; sourceTree = "<group>"; };
 		7B7FFABB82388126FBDC5C90 /* BikeRackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BikeRackService.swift; sourceTree = "<group>"; };
 		80A498905A9205ECE96F27B8 /* PlaceSearchManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchManager.swift; sourceTree = "<group>"; };
+		80CDFEC6D645188D72238BCC /* TransitBrand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransitBrand.swift; sourceTree = "<group>"; };
 		836CD3AE5B1FD42492446E5D /* PolylineDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolylineDecoder.swift; sourceTree = "<group>"; };
 		9E7D565818C12ACCAC1E12C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A36927A0B0CB01F71619EC61 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -101,6 +103,7 @@
 				F164914FFB997DAB7D8220E3 /* SetFavoriteSheet.swift */,
 				FBA97DB9C42528799837D595 /* Sheets.swift */,
 				AEC0043917753CB91CB1498B /* Solar.swift */,
+				80CDFEC6D645188D72238BCC /* TransitBrand.swift */,
 			);
 			path = PugetRoute;
 			sourceTree = "<group>";
@@ -196,6 +199,7 @@
 				74854F2F242169446C5F3D68 /* SetFavoriteSheet.swift in Sources */,
 				AF3F11B39EC0904F303F06D4 /* Sheets.swift in Sources */,
 				D9E2288B875C30B551AE921D /* Solar.swift in Sources */,
+				A2BE69F18DEC798109FDAA21 /* TransitBrand.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

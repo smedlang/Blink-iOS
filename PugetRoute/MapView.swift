@@ -63,6 +63,12 @@ struct ItineraryMapView: UIViewRepresentable {
             } else {
                 let line = LegPolyline(coordinates: pts, count: pts.count)
                 line.mode = leg.mode
+                // Transit legs carry their route's brand color into
+                // the renderer. Non-transit walk legs leave it nil and
+                // the renderer picks .systemGray with a dashed pattern.
+                if leg.isTransit {
+                    line.brandStrokeColor = leg.transitBrand.uiColor
+                }
                 map.addOverlay(line)
             }
         }
@@ -101,6 +107,7 @@ struct ItineraryMapView: UIViewRepresentable {
         // instead of floating at the curb-side stop a few meters off.
         for leg in it.legs where leg.isTransit {
             let legPts = PolylineDecoder.decode(leg.legGeometry.points)
+            let brand = leg.transitBrand.uiColor
             for endpoint in [(leg.from.coordinate, leg.from.name, TransitStopAnnotation.Kind.boarding),
                              (leg.to.coordinate,   leg.to.name,   TransitStopAnnotation.Kind.alighting)] {
                 let key = String(format: "%.5f,%.5f", endpoint.0.latitude, endpoint.0.longitude)
@@ -109,6 +116,7 @@ struct ItineraryMapView: UIViewRepresentable {
                     stop.coordinate = Self.snapToPolyline(endpoint.0, polyline: legPts)
                     stop.title = endpoint.1
                     stop.kind = endpoint.2
+                    stop.brandColor = brand
                     map.addAnnotation(stop)
                 }
             }
@@ -116,6 +124,7 @@ struct ItineraryMapView: UIViewRepresentable {
         // Intermediate stops second.
         for leg in it.legs where leg.isTransit {
             let legPts = PolylineDecoder.decode(leg.legGeometry.points)
+            let brand = leg.transitBrand.uiColor
             for inter in leg.intermediateStops ?? [] {
                 let key = String(format: "%.5f,%.5f", inter.lat, inter.lon)
                 if seenStops.insert(key).inserted {
@@ -123,6 +132,7 @@ struct ItineraryMapView: UIViewRepresentable {
                     stop.coordinate = Self.snapToPolyline(inter.coordinate, polyline: legPts)
                     stop.title = inter.name
                     stop.kind = .intermediate
+                    stop.brandColor = brand
                     map.addAnnotation(stop)
                 }
             }
@@ -167,17 +177,22 @@ struct ItineraryMapView: UIViewRepresentable {
             case "BICYCLE", "BICYCLE_RENT":
                 if line.isRental {
                     // Lime brand-ish green for rental rides. Bright enough
-                    // to read as "Lime" against the map background; not
-                    // the iOS systemGreen (which we already use for
-                    // own-bike on-infra segments) so the user can tell
-                    // them apart.
-                    r.strokeColor = UIColor(red: 0.20, green: 0.80, blue: 0.05, alpha: 1.0)
+                    // to read as "Lime" against the map background. Color
+                    // value lives in Palette so the Lime toggle pill in
+                    // ContentView's search bar stays in sync.
+                    r.strokeColor = Palette.limeUI
                     r.lineWidth = 5
                 } else {
-                    // Green when on a known bike facility (trail / cycletrack /
-                    // protected lane), blue when on regular streets. Per-leg
-                    // splitting happens in updateUIView via bikeLegSegments().
-                    r.strokeColor = line.isOnBikeInfra ? .systemGreen : .systemBlue
+                    // Pine green (#00875A) when on a known bike facility
+                    // (trail / cycletrack / protected lane), blue when on
+                    // regular streets. Per-leg splitting happens in
+                    // updateUIView via bikeLegSegments(). #00875A is
+                    // dark/saturated enough that it doesn't collide with
+                    // Sound Transit Link 1 (#3DAE2B, brighter green) or
+                    // WSF (#006434, even darker). Color value lives in
+                    // Palette — NavigationView.swift's renderer uses the
+                    // same constant.
+                    r.strokeColor = line.isOnBikeInfra ? Palette.bikeInfraUI : .systemBlue
                     r.lineWidth = 5
                 }
             case "WALK":
@@ -185,7 +200,12 @@ struct ItineraryMapView: UIViewRepresentable {
                 r.lineWidth = 4
                 r.lineDashPattern = [2, 6]
             default: // transit
-                r.strokeColor = .systemOrange
+                // Per-route brand color when known (Sound Transit Link,
+                // Sounder, STRIDE, T Line); falls back to systemOrange
+                // for unmapped operators. Brand color is computed at
+                // overlay-add time in updateUIView so the renderer
+                // doesn't need access to the original Leg.
+                r.strokeColor = line.brandStrokeColor ?? .systemOrange
                 r.lineWidth = 6
             }
             return r
@@ -238,27 +258,22 @@ struct ItineraryMapView: UIViewRepresentable {
             view.backgroundColor = .clear
             view.subviews.forEach { $0.removeFromSuperview() }
 
-            // White halo with an orange ring on every kind, so the marker
-            // reads on top of the orange transit polyline without melting
-            // into it.
-            let halo = UIView(frame: view.bounds)
-            halo.backgroundColor = .white
-            halo.layer.cornerRadius = halo.bounds.width / 2
-            halo.layer.borderColor = UIColor.systemOrange.cgColor
-            halo.layer.borderWidth = 1
-            halo.isUserInteractionEnabled = false
-            view.addSubview(halo)
-
-            // Boarding/alighting get a colored fill; intermediate keeps
-            // just the white halo so it reads as "stop the bus makes"
-            // without competing with the louder endpoints.
-            if !isIntermediate {
-                let dot = UIView(frame: view.bounds.insetBy(dx: 3, dy: 3))
-                dot.backgroundColor = stop.kind == .boarding ? .systemOrange : .systemRed
-                dot.layer.cornerRadius = dot.bounds.width / 2
-                dot.isUserInteractionEnabled = false
-                view.addSubview(dot)
-            }
+            // White-filled circle ringed in the route's brand color so each
+            // stop visually belongs to its line (Link green ring on Link
+            // stops, RapidRide red ring on RapidRide stops, etc.). The
+            // boarding/alighting endpoints get a thicker ring (2pt) to
+            // remain the most prominent dots on the line; intermediate
+            // stops get a 1pt ring so they read as "the bus passes here"
+            // without competing with the endpoints. Falls back to
+            // systemOrange when no brand color is set (defensive — every
+            // transit stop should have one once `brandColor` is plumbed).
+            let dot = UIView(frame: view.bounds)
+            dot.backgroundColor = .white
+            dot.layer.cornerRadius = dot.bounds.width / 2
+            dot.layer.borderColor = (stop.brandColor ?? .systemOrange).cgColor
+            dot.layer.borderWidth = isIntermediate ? 1 : 2
+            dot.isUserInteractionEnabled = false
+            view.addSubview(dot)
             return view
         }
 
@@ -392,12 +407,18 @@ final class LegPolyline: MKPolyline {
     /// color across the whole rental ride, so the user sees the rental
     /// portion as visually distinct from an own-bike leg on the same map.
     var isRental: Bool = false
+    /// Brand color for transit legs, set per-overlay from the leg's
+    /// route (see `Leg.transitBrand`). Nil for walk/bike legs and
+    /// unused transit legs we haven't mapped — the renderer falls
+    /// back to .systemOrange in that case.
+    var brandStrokeColor: UIColor?
 }
 
-/// Annotation for transit stops along a route. Rendered as a small circle
-/// on top of the transit polyline so the user can see every stop the bus
-/// makes — boarding (orange), alighting (red), and the intermediate stops
-/// in between (small white dot with an orange ring).
+/// Annotation for transit stops along a route. Rendered as a small white
+/// circle on top of the transit polyline, ringed in the operator's brand
+/// color so each marker visually belongs to its line. Boarding/alighting
+/// dots are larger with a thicker ring so they remain the most prominent
+/// thing on the line; intermediate stops are smaller with a thinner ring.
 final class TransitStopAnnotation: MKPointAnnotation {
     enum Kind {
         /// Where the user gets on this leg.
@@ -405,9 +426,15 @@ final class TransitStopAnnotation: MKPointAnnotation {
         /// Where the user gets off this leg.
         case alighting
         /// A stop the bus makes between boarding and alighting. Rendered
-        /// smaller and unfilled so the boarding/alighting dots remain the
-        /// most prominent thing on the line.
+        /// smaller and thinner-ringed so the boarding/alighting dots
+        /// remain the most prominent thing on the line.
         case intermediate
     }
     var kind: Kind = .boarding
+    /// Brand color of the transit line this stop belongs to. The
+    /// annotation view uses it as the ring color so a Link stop is
+    /// outlined in Link green, a RapidRide stop in RapidRide red, etc.
+    /// Falls back to `.systemOrange` when nil (shouldn't happen for
+    /// transit stops, which always have a route brand).
+    var brandColor: UIColor?
 }

@@ -416,19 +416,19 @@ struct ContentView: View {
                 Text(useLime ? "Lime mode on" : "Use Lime")
                     .font(.caption).bold()
             }
-            .foregroundColor(useLime ? .white : Color(red: 0.20, green: 0.80, blue: 0.05))
+            .foregroundColor(useLime ? .white : Palette.lime)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background {
                 if useLime {
-                    Capsule().fill(Color(red: 0.20, green: 0.80, blue: 0.05))
+                    Capsule().fill(Palette.lime)
                 } else {
                     Capsule().fill(Color(.tertiarySystemBackground))
                 }
             }
             .overlay(
                 Capsule().strokeBorder(
-                    Color(red: 0.20, green: 0.80, blue: 0.05).opacity(useLime ? 0 : 0.55),
+                    Palette.lime.opacity(useLime ? 0 : 0.55),
                     lineWidth: 1
                 )
             )

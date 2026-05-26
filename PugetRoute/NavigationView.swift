@@ -490,42 +490,48 @@ struct TripNavigationView: View {
     /// Transit banner: top row = board info, bottom row = alight info.
     /// The user wants to know both *where to catch it* and *where to get off*.
     private func transitBanner(leg: Leg) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // Brand-driven palette: every text/icon on this banner reads
+        // its color from `leg.transitBrand.textColor` (white for most
+        // brand backgrounds, black for STRIDE yellow / Sounder
+        // lavender). The dimmer secondary labels use `.opacity(0.85)`
+        // off the same base.
+        let textColor = leg.transitBrand.textColor
+        return VStack(alignment: .leading, spacing: 10) {
             // --- Board row ---
             HStack(spacing: 14) {
                 Image(systemName: transitIcon(leg.mode))
                     .font(.largeTitle).bold()
-                    .foregroundColor(.white)
+                    .foregroundColor(textColor)
                     .frame(width: 56)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Board \(leg.displayName)")
-                        .font(.headline).bold().foregroundColor(.white)
+                        .font(.headline).bold().foregroundColor(textColor)
                         .lineLimit(2)
                     Text("at \(leg.from.name)")
-                        .font(.caption).foregroundColor(.white.opacity(0.85))
+                        .font(.caption).foregroundColor(textColor.opacity(0.85))
                         .lineLimit(2)
                     Text(boardCountdown(leg: leg))
-                        .font(.subheadline).bold().foregroundColor(.white)
+                        .font(.subheadline).bold().foregroundColor(textColor)
                 }
                 Spacer()
             }
 
-            Divider().background(Color.white.opacity(0.35))
+            Divider().background(textColor.opacity(0.35))
 
             // --- Alight row ---
             HStack(spacing: 14) {
                 Image(systemName: "figure.walk.arrival")
                     .font(.title2).bold()
-                    .foregroundColor(.white)
+                    .foregroundColor(textColor)
                     .frame(width: 56)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Get off at")
-                        .font(.caption).foregroundColor(.white.opacity(0.85))
+                        .font(.caption).foregroundColor(textColor.opacity(0.85))
                     Text(leg.to.name)
-                        .font(.headline).bold().foregroundColor(.white)
+                        .font(.headline).bold().foregroundColor(textColor)
                         .lineLimit(2)
                     Text("arriving \(leg.effectiveEndTimeString)")
-                        .font(.caption).foregroundColor(.white.opacity(0.85))
+                        .font(.caption).foregroundColor(textColor.opacity(0.85))
                 }
                 Spacer()
             }
@@ -537,7 +543,7 @@ struct TripNavigationView: View {
             bannerStepControls(for: leg)
         }
         .padding(14)
-        .background(Color.purple, in: RoundedRectangle(cornerRadius: 14))
+        .background(leg.transitBrand.color, in: RoundedRectangle(cornerRadius: 14))
         .shadow(radius: 4)
     }
 
@@ -1549,6 +1555,13 @@ struct NavigationMapView: UIViewRepresentable {
                 line.mode = leg.mode
                 line.isActive = (idx == currentLegIndex)
                 line.isPast = (idx < currentLegIndex)
+                // Transit legs carry their route's brand color into
+                // the renderer (see Leg.transitBrand). Non-transit
+                // legs leave it nil so the WALK / BICYCLE paths in
+                // rendererFor pick their defaults.
+                if leg.isTransit {
+                    line.brandStrokeColor = leg.transitBrand.uiColor
+                }
                 map.addOverlay(line)
             }
         }
@@ -1561,6 +1574,7 @@ struct NavigationMapView: UIViewRepresentable {
         // on a neighboring leg defers to the louder dot.
         var seenStops = Set<String>()
         for leg in itinerary.legs where leg.isTransit {
+            let brand = leg.transitBrand.uiColor
             for endpoint in [(leg.from.coordinate, leg.from.name, TransitStopAnnotation.Kind.boarding),
                              (leg.to.coordinate,   leg.to.name,   TransitStopAnnotation.Kind.alighting)] {
                 let key = String(format: "%.5f,%.5f", endpoint.0.latitude, endpoint.0.longitude)
@@ -1569,11 +1583,13 @@ struct NavigationMapView: UIViewRepresentable {
                     stop.coordinate = endpoint.0
                     stop.title = endpoint.1
                     stop.kind = endpoint.2
+                    stop.brandColor = brand
                     map.addAnnotation(stop)
                 }
             }
         }
         for leg in itinerary.legs where leg.isTransit {
+            let brand = leg.transitBrand.uiColor
             for inter in leg.intermediateStops ?? [] {
                 let key = String(format: "%.5f,%.5f", inter.lat, inter.lon)
                 if seenStops.insert(key).inserted {
@@ -1581,6 +1597,7 @@ struct NavigationMapView: UIViewRepresentable {
                     stop.coordinate = inter.coordinate
                     stop.title = inter.name
                     stop.kind = .intermediate
+                    stop.brandColor = brand
                     map.addAnnotation(stop)
                 }
             }
@@ -1699,17 +1716,24 @@ struct NavigationMapView: UIViewRepresentable {
                 return MKOverlayRenderer(overlay: overlay)
             }
             let r = MKPolylineRenderer(polyline: line)
-            // Color base by mode. Bike picks green vs. blue per sub-segment
-            // depending on whether that step is on known bike infrastructure.
-            // Transit is orange (was blue, but blue now means on-street biking).
+            // Color base by mode. Bike picks pine green vs. blue per
+            // sub-segment depending on whether that step is on known bike
+            // infrastructure. Pine green (#00875A) is darker/more
+            // saturated than Sound Transit Link 1 (#3DAE2B) so the two
+            // greens stay distinguishable. Color value lives in Palette
+            // — MapView.swift's renderer uses the same constant.
             let base: UIColor
             switch line.mode {
             case "BICYCLE", "BICYCLE_RENT":
-                base = line.isOnBikeInfra ? .systemGreen : .systemBlue
+                base = line.isOnBikeInfra ? Palette.bikeInfraUI : .systemBlue
             case "WALK":
                 base = .systemGray
             default:
-                base = .systemOrange
+                // Per-route brand color when set at overlay-add time
+                // (Sound Transit Link/Sounder/STRIDE/T Line where
+                // mapped); falls back to systemOrange for unmapped
+                // operators.
+                base = line.brandStrokeColor ?? .systemOrange
             }
             if line.isPast {
                 r.strokeColor = base.withAlphaComponent(0.25)

@@ -328,12 +328,14 @@ struct ItineraryRow: View {
     }
 
     private func tint(for leg: Leg) -> Color {
+        if leg.isTransit { return leg.transitBrand.color }
         switch leg.mode {
-        case "BICYCLE", "BICYCLE_RENT": return .green
+        case "BICYCLE", "BICYCLE_RENT":
+            // Pine green #00875A — matches the bike-on-infra polyline
+            // color in the map and nav renderers. Single source of
+            // truth lives in `Palette.bikeInfra`.
+            return Palette.bikeInfra
         case "WALK":                    return .gray
-        case "BUS":                     return .blue
-        case "RAIL", "TRAM", "SUBWAY":  return .purple
-        case "FERRY":                   return .teal
         default:                        return .primary
         }
     }
@@ -485,8 +487,120 @@ struct ItineraryDetailView: View {
                 .font(.largeTitle).bold()
             Text(itinerary.timeRange)
                 .font(.subheadline).foregroundColor(.secondary)
-            Text(itinerary.summary)
-                .font(.caption).foregroundColor(.secondary)
+            summaryRow
+        }
+    }
+
+    /// Trip summary line below the time range. Same content as
+    /// `itinerary.summary` but built as a view so each mode segment
+    /// renders as a brand-colored capsule (cyan bike bubble for the
+    /// bike portion, operator-colored bubbles for transit legs)
+    /// rather than plain prose. Transit legs are separated by
+    /// chevrons (›) rather than the "+" the string version uses,
+    /// so the line reads like a sequence ("124 › 1 Line › 271")
+    /// rather than an addition. Bike attributes (total climb feet,
+    /// "steep" flag) stay as plain caption text — they describe the
+    /// bike portion rather than being a leg of their own.
+    private var summaryRow: some View {
+        HStack(spacing: 6) {
+            // Bike duration — pine green capsule with bicycle icon. Pine
+            // green (#00875A) matches the bike-on-infra polyline color
+            // the map renders for these legs. Sourced from `Palette`.
+            if itinerary.bikeMinutes > 0 {
+                summaryBubble(
+                    icon: "bicycle",
+                    label: "\(itinerary.bikeMinutes) min",
+                    tint: Palette.bikeInfra
+                )
+            }
+            // Bike attributes (climb feet, steep flag) — plain caption
+            // text, since these describe the bike portion above rather
+            // than being legs of their own.
+            let extras = bikeExtraSummaryParts
+            if !extras.isEmpty {
+                if itinerary.bikeMinutes > 0 {
+                    Text("•").font(.caption).foregroundColor(.secondary)
+                }
+                Text(extras.joined(separator: " • "))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            // Transit lines — each rendered as a brand-tinted capsule,
+            // chevron between consecutive legs.
+            let transitLegs = itinerary.legs.filter { $0.isTransit }
+            if !transitLegs.isEmpty {
+                let hasPrefix = itinerary.bikeMinutes > 0 || !extras.isEmpty
+                if hasPrefix {
+                    Text("•").font(.caption).foregroundColor(.secondary)
+                }
+                ForEach(Array(transitLegs.enumerated()), id: \.offset) { idx, leg in
+                    if idx > 0 {
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    summaryBubble(
+                        icon: summaryBubbleIcon(for: leg.mode),
+                        label: leg.route?.shortName ?? leg.route?.longName ?? "transit",
+                        tint: leg.transitBrand.color
+                    )
+                }
+            }
+        }
+    }
+
+    /// Bike-attribute summary parts (total climb feet, "steep" flag).
+    /// Mirrors the climb/steep logic in `Itinerary.summary`; returned
+    /// as separate strings so the view can join them with "•" between
+    /// the bike bubble and the transit bubbles. The bike duration
+    /// itself is now rendered as a capsule, so it's not in this list.
+    private var bikeExtraSummaryParts: [String] {
+        var parts: [String] = []
+        let totalClimb = itinerary.legs.compactMap { $0.climbMeters }.reduce(0, +)
+        if totalClimb >= 10 {
+            let feet = Int((totalClimb * 3.28084).rounded())
+            parts.append("↗ \(feet) ft")
+        }
+        if itinerary.hasSteepBikeLeg {
+            parts.append("steep")
+        }
+        return parts
+    }
+
+    /// Mini brand-colored capsule used by every bubble in the trip
+    /// summary line. Matches the visual treatment of the option chip
+    /// in `ItineraryRow.singleChip` (icon + label, tint × 0.15
+    /// background, tint foreground, Capsule shape) but with tighter
+    /// padding (6/2 instead of 8/4) since it sits inline with
+    /// caption-sized secondary text rather than as a standalone
+    /// affordance.
+    private func summaryBubble(icon: String, label: String, tint: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.caption2)
+            Text(label)
+                .font(.caption).bold()
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .foregroundColor(tint)
+        .background(tint.opacity(0.15), in: Capsule())
+    }
+
+    /// SF Symbol name for a leg's mode, used inside the summary-line
+    /// transit bubbles. Mirrors the `iconName(for:)` mappings in
+    /// `ItineraryRow` and `LegDetailRow`; duplicated here so the
+    /// summary view doesn't need to reach into a sibling view's
+    /// private helper.
+    private func summaryBubbleIcon(for mode: String) -> String {
+        switch mode {
+        case "BICYCLE", "BICYCLE_RENT": return "bicycle"
+        case "WALK":                    return "figure.walk"
+        case "BUS":                     return "bus.fill"
+        case "RAIL", "TRAM", "SUBWAY":  return "tram.fill"
+        case "FERRY":                   return "ferry.fill"
+        default:                        return "arrow.right"
         }
     }
 
@@ -848,16 +962,19 @@ private struct LegDetailRow: View {
     private var tint: Color {
         // Rental bikes (Lime) get the same Lime-tinted green as the map
         // polyline, so the detail row visually matches what the user
-        // sees on the route line.
-        if leg.isRental {
-            return Color(red: 0.20, green: 0.80, blue: 0.05)
-        }
+        // sees on the route line. Sourced from `Palette`.
+        if leg.isRental { return Palette.lime }
+        // Transit legs use the route's brand color (Sound Transit
+        // Link/Sounder/STRIDE/T Line where mapped; mode-default
+        // otherwise) so the icon next to the leg row matches the
+        // colored polyline on the map.
+        if leg.isTransit { return leg.transitBrand.color }
         switch leg.mode {
-        case "BICYCLE", "BICYCLE_RENT": return .green
+        case "BICYCLE", "BICYCLE_RENT":
+            // Pine green #00875A — see `Palette.bikeInfra`. Same color
+            // used for the bike-on-infra polyline on the map.
+            return Palette.bikeInfra
         case "WALK":                    return .secondary
-        case "BUS":                     return .blue
-        case "RAIL", "TRAM", "SUBWAY":  return .purple
-        case "FERRY":                   return .teal
         default:                        return .primary
         }
     }
