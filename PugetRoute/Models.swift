@@ -16,6 +16,21 @@ enum TripMode: String, CaseIterable, Identifiable {
     /// Lime in Seattle) — origin walk → pickup → rental ride → walk to
     /// destination. Comes back as `mode: BICYCLE` with `rentedBike: true`
     /// on the leg, not `mode: BICYCLE_RENT`.
+    ///
+    /// `bikeTransit` is `[BICYCLE, TRANSIT]` only — no `WALK`. We
+    /// tried adding `WALK` (with and without `qualifier: ACCESS`)
+    /// hoping OTP would use walking to transfer between buses at
+    /// different physical stops in the same hub (e.g., a 200ft walk
+    /// between bays at Issaquah Transit Center to chain the 554 with
+    /// the 208). It did not help — OTP refuses to model "walk the
+    /// bike between stops" regardless of mode set, so adding `WALK`
+    /// was a no-op. The actual blocker is at the graph layer: OTP's
+    /// transit-transfer edges are pre-computed walk-only, so transfers
+    /// requiring movement between different stops are invisible to
+    /// the planner once BICYCLE is in modes. See
+    /// `tasks/otp-bike-transfer-edges.md` for the backend fix
+    /// (adding `BICYCLE` to `transit.transferRequests` in OTP's
+    /// `router-config.json` and rebuilding the graph).
     var otpTransportModes: [[String: String]] {
         switch self {
         case .bikeTransit: return [["mode": "BICYCLE"], ["mode": "TRANSIT"]]

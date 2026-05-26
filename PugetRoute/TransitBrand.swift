@@ -113,15 +113,30 @@ enum Palette {
 }
 
 extension Leg {
-    /// Brand colors for rendering this leg's transit segments. For
-    /// known Sound Transit lines (Link, Sounder, STRIDE, Tacoma Link)
-    /// this returns the operator's official brand color; for other
-    /// transit routes it returns a mode-based default that matches
-    /// the pre-branding behavior (orange for bus, purple for rail,
-    /// teal for ferry). Walk/bike legs aren't transit and shouldn't
-    /// call this — the default fallback is bus-orange but should be
-    /// unused for those modes.
+    /// Brand colors for rendering this leg's transit segments using
+    /// the leg's primary `route`. For known Sound Transit lines (Link,
+    /// Sounder, STRIDE, Tacoma Link) this returns the operator's
+    /// official brand color; for other transit routes it returns a
+    /// mode-based default. Walk/bike legs aren't transit and shouldn't
+    /// call this — the fallback is bus-yellow but should be unused
+    /// for those modes.
+    ///
+    /// For legs that have alternative routes merged in by
+    /// `dedupeByTransitStops` (e.g., a chip shows "1 Line / 2 Line"),
+    /// call `transitBrand(for:)` with each alternative's `RouteInfo`
+    /// so each chip gets its own operator color instead of inheriting
+    /// the primary's.
     var transitBrand: TransitBrand {
+        return transitBrand(for: route)
+    }
+
+    /// Brand colors for an arbitrary route on this leg's mode. Same
+    /// switch-then-name-then-mode logic as `transitBrand`, just with
+    /// the route passed in so callers can look up an alternative's
+    /// brand without needing to swap `self.route`. Mode is taken from
+    /// `self` since alternatives share the leg's mode (they were
+    /// merged together because they share a boarding stop sequence).
+    func transitBrand(for route: RouteInfo?) -> TransitBrand {
         // Sound Transit — matched on the route's GTFS shortName,
         // which agency feeds set to the rider-facing name ("1 Line",
         // "T Line", "S1 Line", "N Line", etc.).

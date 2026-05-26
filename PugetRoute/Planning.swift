@@ -35,6 +35,66 @@ extension ContentView {
         return withTransit.isEmpty ? its : withTransit
     }
 
+    /// Order itineraries by the user's "best" criterion given the
+    /// active time target:
+    ///
+    /// - `.leaveNow` / `.leaveAt` → earliest arrival first ("get
+    ///   there soonest"). The user picked a depart time, so the most
+    ///   useful ranking is which option lands them at the destination
+    ///   first.
+    /// - `.arriveBy` → latest arrival first (i.e., closest to the
+    ///   deadline). The user has a fixed arrival target; the option
+    ///   that arrives nearest the deadline minimizes waiting around
+    ///   at the destination. Past-start filtering (`filterPastStarts`)
+    ///   runs *after* this sort and drops anything the user can no
+    ///   longer catch, so the resulting top option is the catchable
+    ///   one with the latest arrival.
+    ///
+    /// Uses `Itinerary.endDate` (defined as
+    /// `startDate + effectiveDurationSeconds`), which folds in our
+    /// client-side pace + climb stamping — sorting by realistic
+    /// arrival rather than OTP's optimistic duration.
+    static func sortByArrival(_ its: [Itinerary], when: TimeTarget) -> [Itinerary] {
+        switch when {
+        case .arriveBy:
+            return its.sorted { $0.endDate > $1.endDate }
+        case .leaveNow, .leaveAt:
+            return its.sorted { $0.endDate < $1.endDate }
+        }
+    }
+
+    /// Take the top 2 from an already-arrival-sorted list, plus the
+    /// single fastest-by-duration item if it isn't already one of
+    /// those two. Returns up to 3 itineraries.
+    ///
+    /// The point: the user usually wants "what's the next thing I can
+    /// catch" (top 2 by arrival), but sometimes total trip time matters
+    /// more — a trip that departs 30 min from now but takes 40 min beats
+    /// one that departs now and takes 90 min. Surfacing both criteria
+    /// in the same short list lets the user pick between the two
+    /// trade-offs without scrolling through alternatives.
+    ///
+    /// Expects the input to already be sorted by arrival time (per
+    /// `sortByArrival`). The first two elements of the result are the
+    /// soonest pair; the optional third is the fastest from the whole
+    /// pool, included only when it's distinct from the first two
+    /// (since otherwise it'd duplicate). For arrive-by queries the
+    /// input is sorted descending by arrival, so "top 2 soonest" means
+    /// "top 2 closest to deadline" — still the right interpretation
+    /// of "best two arrival times."
+    static func pickSoonestAndFastest(_ its: [Itinerary]) -> [Itinerary] {
+        var result = Array(its.prefix(2))
+        guard let fastest = its.min(by: {
+            $0.effectiveDurationSeconds < $1.effectiveDurationSeconds
+        }) else {
+            return result
+        }
+        if !result.contains(where: { $0.id == fastest.id }) {
+            result.append(fastest)
+        }
+        return result
+    }
+
     /// Drop itineraries the user can no longer realistically start. OTP
     /// happily returns options whose `startTime` is in the past — typical when
     /// the user is asking "arrive by 5pm" but it's already 4:55 and the only
@@ -319,10 +379,11 @@ extension ContentView {
                 // bike time penalty is already folded into stamping for
                 // routes that DO use the crossing within open hours.
                 let openOnly = stamped.filter { !BallardLocks.shouldDropForClosedCrossing($0) }
-                // Sort by the new effective duration so the top option
-                // is the fastest under our model, not OTP's. Same number
-                // the UI shows — list order and labels can't disagree.
-                return openOnly.sorted { $0.effectiveDurationSeconds < $1.effectiveDurationSeconds }
+                // Order by realistic arrival time: soonest first for
+                // leave-now / depart-at, closest-to-deadline first for
+                // arrive-by. Uses post-stamping endDate so the ranking
+                // matches what the UI shows.
+                return Self.sortByArrival(openOnly, when: startedWhen)
             }()
             // Bike-only ordering: lane fraction wins only when the
             // difference is meaningful (≥15 percentage points). Within
@@ -374,7 +435,14 @@ extension ContentView {
                 // equivalent to sorting on `.duration` here, just expressed
                 // through the same accessor everything else uses.
                 if let r = toRes {
-                    let sorted = r.sorted { $0.effectiveDurationSeconds < $1.effectiveDurationSeconds }
+                    // Transit-only: same arrival-time ordering as
+                    // bike+transit — soonest arrival for depart-at /
+                    // leave-now, closest-to-deadline for arrive-by.
+                    // `effectiveDurationSeconds` collapses to OTP's raw
+                    // duration on transit-only legs (no bike stamping),
+                    // so `endDate` is equivalent to OTP's reported
+                    // arrival time here.
+                    let sorted = Self.sortByArrival(r, when: startedWhen)
                     dict[.transitOnly] = Self.dedupeByTransitStops(Self.filterForMode(sorted, mode: .transitOnly))
                 }
 
@@ -400,20 +468,31 @@ extension ContentView {
                     }
                 }
 
-                // Cap each mode's list at the top N options. Each list is
-                // already ranked by the mode's own logic — bike-only by
-                // bike-lane bucket, bike+transit by elevation-adjusted
-                // duration, transit-only by duration — so `.prefix` keeps
-                // the best N. Three is the sweet spot: enough to surface a
-                // meaningfully different alternative or two (e.g. flatter
-                // bike-only, more-bike vs. less-bike transit option) without
-                // burying any of them in a long scrolling list. The fan-out
-                // queries can return ~10 raw itineraries per mode after
-                // dedup, which crowded the bottom panel.
-                let maxOptionsPerMode = 3
+                // Cap each mode's list. Mode-specific logic:
+                //
+                // - Bike+transit and transit-only: 2 soonest by arrival
+                //   + the fastest by duration if distinct (see
+                //   `pickSoonestAndFastest`). Up to 3 items. Surfaces
+                //   the two axes the user actually cares about ("catch
+                //   the next one" and "shortest total trip") instead
+                //   of just the top 3 by one criterion.
+                // - Bike-only: keep the first 3 from the mode's own
+                //   ranking (lane coverage + dark-aware time). The
+                //   user's bike-route decision isn't usually
+                //   arrival-time-driven, so the soonest-plus-fastest
+                //   mix doesn't apply.
+                //
+                // Runs after `filterPastStarts` so a "fastest" pick
+                // never references an already-departed trip.
                 for m in Array(dict.keys) {
-                    if let list = dict[m], list.count > maxOptionsPerMode {
-                        dict[m] = Array(list.prefix(maxOptionsPerMode))
+                    guard let list = dict[m] else { continue }
+                    switch m {
+                    case .bikeTransit, .transitOnly:
+                        dict[m] = Self.pickSoonestAndFastest(list)
+                    default:
+                        if list.count > 3 {
+                            dict[m] = Array(list.prefix(3))
+                        }
                     }
                 }
 

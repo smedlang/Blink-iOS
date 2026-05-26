@@ -256,31 +256,35 @@ struct ItineraryRow: View {
     /// label so the user can scan them independently — visually
     /// stronger than slash-joining route names into one capsule.
     private func chip(for leg: Leg) -> some View {
-        // Collect the list of labels we need to render — one per
-        // capsule. For bike/walk that's a single "duration" label;
-        // for transit it's the primary route + each alternative,
-        // computed up front so every capsule goes through the same
-        // ForEach + singleChip path. Earlier the primary was
-        // rendered outside the ForEach and alternatives inside,
-        // which gave SwiftUI subtly different layout containers per
-        // chip and made the second+ capsules render slightly
-        // smaller than the first.
-        let labels: [String] = {
+        // Collect (label, tint) pairs — one per capsule. For bike/walk
+        // that's a single duration label tinted by the leg's mode; for
+        // transit it's the primary route plus each alternative, with
+        // each capsule tinted by *its own* route's brand color so a
+        // chip row like "1 Line / 2 Line" renders Link 1 green next to
+        // Link 2 blue instead of two green chips. Earlier all chips
+        // used the leg's primary `transitBrand`, which made every
+        // alternative inherit the primary's color.
+        let entries: [(label: String, tint: Color)] = {
             switch leg.mode {
             case "BICYCLE", "BICYCLE_RENT", "WALK":
-                return [Itinerary.formatMinutes(leg.durationMinutes)]
+                return [(Itinerary.formatMinutes(leg.durationMinutes), tint(for: leg))]
             default:
-                let primary = routeChipName(for: leg.route) ?? leg.mode.capitalized
-                let alts = leg.alternativeRoutes.compactMap(routeChipName(for:))
-                return [primary] + alts
+                let primaryLabel = routeChipName(for: leg.route) ?? leg.mode.capitalized
+                let primaryTint = leg.transitBrand(for: leg.route).color
+                var out: [(String, Color)] = [(primaryLabel, primaryTint)]
+                for alt in leg.alternativeRoutes {
+                    guard let label = routeChipName(for: alt) else { continue }
+                    out.append((label, leg.transitBrand(for: alt).color))
+                }
+                return out
             }
         }()
         return HStack(spacing: 4) {
-            ForEach(Array(labels.enumerated()), id: \.offset) { _, label in
+            ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
                 singleChip(
                     icon: iconName(for: leg.mode),
-                    label: label,
-                    tint: tint(for: leg)
+                    label: entry.label,
+                    tint: entry.tint
                 )
             }
         }
