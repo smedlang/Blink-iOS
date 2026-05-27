@@ -75,18 +75,22 @@ struct ContentView: View {
     /// Itinerary currently shown in the detail sheet (nil = none).
     @State private var detailItinerary: Itinerary?
 
-    /// Whether the bottom options panel (time row + mode bar + alternates
-    /// list) is collapsed down to just a drag handle so the user can see
-    /// the full map. Toggled by tapping the handle or swiping it
-    /// up/down. Persists across mode/itinerary changes — once the user
-    /// has hidden the panel they probably want it to stay hidden until
-    /// they explicitly bring it back.
-    @State private var isBottomPanelCollapsed: Bool = false
+    /// Whether the bottom-panel sheet is presented. Mirrors
+    /// `!modeItineraries.isEmpty && detailItinerary == nil` but as a
+    /// real @State so SwiftUI's sheet machinery can drive both sides
+    /// of the binding (read for display, write when user swipes the
+    /// sheet down). Kept in sync via `.onChange` modifiers below.
+    /// Using a real binding (rather than a computed one with a no-op
+    /// setter) avoids quirks where the sheet's
+    /// `presentationBackgroundInteraction` doesn't take effect.
+    @State private var bottomPanelPresented: Bool = false
 
-    /// Live drag offset for the bottom panel so the user feels the
-    /// finger move the panel before the snap. Reset to 0 by SwiftUI on
-    /// gesture end; the snap is applied to `isBottomPanelCollapsed`.
-    @GestureState private var bottomPanelDrag: CGFloat = 0
+    /// Currently-selected sheet detent for the bottom panel. Bound to
+    /// `presentationDetents(_:selection:)` so we can force the initial
+    /// detent (small — just the time chips + mode bar visible) and
+    /// react to drag-induced detent changes if needed. Default
+    /// `.height(140)` matches the smallest detent in the list below.
+    @State private var bottomPanelDetent: PresentationDetent = .height(140)
 
     /// Bike-rack annotations rendered on the main map for the
     /// currently-selected itinerary. Refreshed via `.task(id:)` below
@@ -117,40 +121,18 @@ struct ContentView: View {
             .padding(.horizontal)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-            // Bottom stack: time/preferences chips sit above one unified panel
-            // that houses the mode bar and the itinerary list together, so the
-            // mode pills read as a header on top of the list rather than a
-            // floating row above it.
-            //
-            // Hidden while the detail sheet is up — the user has committed to
-            // a route and the mode pills + alternates list would just compete
-            // visually with the sheet and the colored map line behind it.
-            // Dismissing the sheet brings the panel back so the user can pick
-            // a different itinerary or mode.
-            if !modeItineraries.isEmpty && detailItinerary == nil {
-                VStack(spacing: 8) {
-                    // Time chips and the search-result panel slide as
-                    // one unit. When collapsed, only the drag handle on
-                    // top of `bottomPanel` peeks above the safe area —
-                    // everything else translates off-screen so the map
-                    // is unobstructed. Live `bottomPanelDrag` offset
-                    // gives finger-on-glass feel during the swipe; the
-                    // collapsed-or-not state is the snap target on
-                    // gesture end.
-                    if !isBottomPanelCollapsed {
-                        timeRow
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                    bottomPanel
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .offset(y: liveBottomPanelOffset)
-                .transition(.opacity)
-            }
+            // Bottom panel is presented as a native `.sheet` with
+            // detents (see modifier below). The previous custom
+            // ZStack-overlay version had hand-rolled drag handling
+            // that fought SwiftUI; the native sheet gives us
+            // bulletproof drag-to-resize plus the standard pill
+            // affordance. The smallest detent (140 pt) acts as the
+            // "collapsed" state — just enough to show time chips + the
+            // mode bar — while medium/large reveal the alternates
+            // list. Search bar and Lime toggle stay tappable at the
+            // small detent because `presentationBackgroundInteraction
+            // (.enabled)` lets touches reach the ZStack below.
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isBottomPanelCollapsed)
         .animation(.easeInOut(duration: 0.2), value: detailItinerary != nil)
         .onAppear {
             location.requestWhenInUse()
@@ -158,6 +140,31 @@ struct ContentView: View {
             // Default From to the user's current location. If they want to
             // change it they can tap the From row inside the search sheet.
             if fromQuery.isEmpty { fromQuery = "Your location" }
+
+            // UI-test affordance: when launched with `--ui-test-from
+            // <lat>,<lon>`, pre-seed `fromCoord` synchronously at app
+            // launch instead of waiting for CoreLocation. Without this,
+            // Maestro/XCUITest flows that pick a destination immediately
+            // after launch hit the place-search sheet flipping to the
+            // From field (because fromCoord is still nil), which
+            // requires an extra interaction to resolve. The arg only
+            // affects fromCoord; the rest of the location pipeline
+            // (CoreLocation, live tracking during nav) continues as
+            // normal. Production builds shouldn't see this arg.
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "--ui-test-from"),
+               i + 1 < args.count {
+                let parts = args[i + 1].split(separator: ",")
+                if parts.count == 2,
+                   let lat = Double(parts[0]),
+                   let lon = Double(parts[1]) {
+                    fromCoord = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+                    // fromQuery stays as "Your location" — the trip's
+                    // origin still semantically equals current location,
+                    // and downstream code (e.g., the detail page's
+                    // `isAtTripStart` check) reads the literal string.
+                }
+            }
         }
         .onChange(of: location.lastLocation?.coordinate.latitude) { _, _ in
             // Bind the live GPS fix to the "Your location" default as soon
@@ -209,6 +216,31 @@ struct ContentView: View {
         .onChange(of: searchTarget) { _, target in
             if target != nil { errorMessage = nil }
         }
+        // Drive the bottom-panel sheet: show whenever we have
+        // itineraries and **no other modal is up**. SwiftUI sheets at
+        // the same view level fight each other — opening a second one
+        // while one is presented just silently drops the new
+        // presentation. The cleanest workaround is to keep the
+        // bottom-panel sheet at ContentView level alongside the
+        // others, and have any modal (search, prefs, time picker,
+        // trip detail) explicitly dismiss the panel sheet by flipping
+        // `bottomPanelPresented` to false. Once the modal closes, the
+        // panel reappears because `modeItineraries` is still
+        // populated. The bottom-panel sheet behaves like a
+        // "background view" that other modals temporarily take
+        // priority over — same pattern Apple Maps uses.
+        .onChange(of: modeItineraries.isEmpty) { _, _ in
+            updateBottomPanelVisibility()
+        }
+        .onChange(of: showTimePicker) { _, _ in
+            updateBottomPanelVisibility()
+        }
+        .onChange(of: showPrefs) { _, _ in
+            updateBottomPanelVisibility()
+        }
+        .onChange(of: searchTarget) { _, _ in
+            updateBottomPanelVisibility()
+        }
         // Chain: if the user tapped a From/To row while trip-detail was
         // up, we dismissed detail first (see openSearch) and stashed the
         // target. After detail finishes dismissing, present search.
@@ -218,7 +250,12 @@ struct ContentView: View {
         // Observes `detailItinerary != nil` (Bool) rather than the
         // optional itself so we don't need Itinerary to be Equatable —
         // all we care about is the transition to nil.
+        //
+        // Also re-checks bottom-panel visibility — when detail opens
+        // the panel dismisses; when detail closes it re-presents (if
+        // itineraries remain).
         .onChange(of: detailItinerary != nil) { _, isPresent in
+            updateBottomPanelVisibility()
             guard !isPresent,
                   let pending = pendingSearchAfterDetailClose else { return }
             pendingSearchAfterDetailClose = nil
@@ -226,6 +263,24 @@ struct ContentView: View {
                 try? await Task.sleep(for: .milliseconds(350))
                 searchTarget = pending
             }
+        }
+        // Persistent bottom panel — presented as a native sheet so the
+        // drag-to-resize works natively. The smallest detent shows just
+        // time chips + mode bar (panel-as-status-bar); medium/large
+        // reveal the alternates list. `presentationBackgroundInteraction
+        // (.enabled)` keeps the searchCard and Lime toggle tappable at
+        // the small detent — without it, the sheet captures all
+        // touches and the search bar goes dead. We bind `selection` to
+        // `bottomPanelDetent` so the sheet starts at the small detent
+        // every time it presents.
+        .sheet(isPresented: $bottomPanelPresented) {
+            bottomPanelSheetContent
+                .presentationDetents(
+                    [.height(140), .height(bottomPanelContentFitHeight)],
+                    selection: $bottomPanelDetent
+                )
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.enabled)
         }
         .sheet(isPresented: $showTimePicker) {
             TimeTargetSheet(target: $when) {
@@ -244,22 +299,12 @@ struct ContentView: View {
                 itinerary: it,
                 mode: mode,
                 preference: preference,
-                // Live nav only makes sense when the trip's start is
-                // where the user actually is. `fromQuery == "Your
-                // location"` is the signal — set whenever the user
-                // picks "Use my location" from the place-search sheet
-                // (and on first launch by default). Any other origin
-                // means the user is planning ahead from a different
-                // location; detail view downgrades GO to "Preview steps".
                 isAtTripStart: fromQuery == "Your location"
             )
-                .presentationDetents([.height(260), .medium, .large])
-                .presentationDragIndicator(.visible)
-                // Keep the map pannable/zoomable while the sheet is at the
-                // small detent. Once the user drags it up to medium or large,
-                // the sheet becomes modal and the map dims as normal.
-                .presentationBackgroundInteraction(.enabled(upThrough: .height(260)))
-                .interactiveDismissDisabled(false)
+            .presentationDetents([.height(260), .medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.enabled(upThrough: .height(260)))
+            .interactiveDismissDisabled(false)
         }
         .sheet(item: $searchTarget) { target in
             PlaceSearchSheet(
@@ -274,6 +319,62 @@ struct ContentView: View {
                 }
             )
         }
+    }
+
+    /// Recompute whether the bottom-panel sheet should be visible.
+    /// Called from the various `.onChange` handlers above. The panel
+    /// is shown only when there are itineraries to display *and*
+    /// no other modal is competing for the screen. SwiftUI sheet
+    /// modifiers attached at the same view level can't coexist
+    /// visually — only one can be the active sheet — so we
+    /// explicitly hide the panel whenever any of search / prefs /
+    /// time picker / trip detail is up, then bring it back when
+    /// they dismiss.
+    private func updateBottomPanelVisibility() {
+        let anyModalUp = showTimePicker
+            || showPrefs
+            || searchTarget != nil
+            || detailItinerary != nil
+        bottomPanelPresented = !modeItineraries.isEmpty && !anyModalUp
+    }
+
+    /// Computed sheet height that fits the panel's content — tall
+    /// enough to show the time chips, mode bar, and every itinerary
+    /// row of whichever mode has the most. Replaces `.medium` /
+    /// `.large` as the "expanded" detent so the user can't drag the
+    /// sheet larger than it needs to be (which leaves a chunk of
+    /// blank white space below the last row).
+    ///
+    /// We sum the height of the **max-count** mode (not the current
+    /// mode) so that toggling between bike-only / bike+transit /
+    /// transit-only doesn't change the detent set. When the detent
+    /// set changes mid-presentation, SwiftUI snaps the sheet to the
+    /// nearest detent — usually the small one — which feels like
+    /// the sheet auto-collapses every time the user picks a mode.
+    /// Using the max count keeps the detents stable; modes with
+    /// fewer rows show a small amount of trailing blank space at
+    /// most, which is preferable to the snap-back annoyance.
+    ///
+    /// Heights are approximate, measured against the rendered output
+    /// of ItineraryRow on iPhone 17 Pro at iOS 26.5. Rows can vary
+    /// (Lime badge, hill badge) but the per-row budget absorbs it.
+    private var bottomPanelContentFitHeight: CGFloat {
+        // Compact base: drag indicator + time chips + mode bar + a
+        // small breathing space. Slightly less than the smallest
+        // detent (140) because the small detent leaves room for one
+        // peek-preview row, while the header alone is tighter.
+        let headerHeight: CGFloat = 110
+        // Each itinerary row + its trailing divider.
+        let rowHeight: CGFloat = 95
+        // Top divider that separates the mode bar from the list.
+        let listChrome: CGFloat = 8
+
+        // Max rows across all modes — keeps the detent stable when
+        // the user switches modes. Falls back to 1 row if no
+        // itineraries are loaded yet (defensive; the sheet shouldn't
+        // be presented in that case anyway).
+        let maxRowCount = max(1, modeItineraries.values.map(\.count).max() ?? 1)
+        return headerHeight + listChrome + CGFloat(maxRowCount) * rowHeight
     }
 
     // MARK: - Subviews
@@ -514,124 +615,45 @@ struct ContentView: View {
         }
     }
 
-    /// Unified container that holds the mode bar and itinerary list in a
-    /// single rounded card with a divider between them, so the mode pills
-    /// read as a header on top of the list rather than a floating row above.
-    ///
-    /// **Collapsed vs. expanded.** The drag handle and the mode bar both
-    /// stay visible in either state — only the itinerary list collapses.
-    /// This way the user can switch modes (and see the corresponding
-    /// route on the map) while the panel is hidden, without having to
-    /// expand the panel just to change between bike-only / bike+transit /
-    /// transit-only.
-    private var bottomPanel: some View {
+    /// Content of the persistent bottom-panel sheet. The sheet
+    /// modifier (in `body`) provides the chrome (drag indicator,
+    /// rounded corners, material), so this view is just the
+    /// contents: time chips at the top, mode bar, then the
+    /// scrollable itinerary list. At the smallest detent only the
+    /// time chips + mode bar fit; medium/large reveal the list.
+    private var bottomPanelSheetContent: some View {
         VStack(spacing: 0) {
-            // Drag handle sits at the top of the same material card so
-            // when the panel is collapsed it still reads as a chip on
-            // the map (rounded + shadowed) rather than a floating bar
-            // with no edges. Tap to toggle, drag up/down to slide.
-            dragHandle
+            timeRow
+                .padding(.horizontal)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
             modeBar
                 .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-            if !isBottomPanelCollapsed && !itineraries.isEmpty {
+                .padding(.bottom, 8)
+
+            if !itineraries.isEmpty {
                 Divider()
-                VStack(spacing: 0) {
-                    ForEach(Array(itineraries.enumerated()), id: \.element.id) { idx, it in
-                        ItineraryRow(
-                            itinerary: it,
-                            isSelected: selectedItinerary?.id == it.id
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectedItinerary = it
-                            detailItinerary = it
-                        }
-                        if idx < itineraries.count - 1 {
-                            Divider().padding(.leading, 12)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(itineraries.enumerated()), id: \.element.id) { idx, it in
+                            ItineraryRow(
+                                itinerary: it,
+                                isSelected: selectedItinerary?.id == it.id
+                            )
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                selectedItinerary = it
+                                detailItinerary = it
+                            }
+                            if idx < itineraries.count - 1 {
+                                Divider().padding(.leading, 12)
+                            }
                         }
                     }
                 }
             }
         }
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(Color.secondary.opacity(0.15), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
-    }
-
-    /// Drag handle pill that sits on top of the bottom panel. Tap to
-    /// toggle expanded/collapsed; vertical drag does the same with a
-    /// snap on release. Hit area is wider than the visible pill so the
-    /// affordance is easy to grab.
-    private var dragHandle: some View {
-        VStack(spacing: 0) {
-            Capsule()
-                .fill(Color.secondary.opacity(0.45))
-                .frame(width: 38, height: 5)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                isBottomPanelCollapsed.toggle()
-            }
-        }
-        .gesture(
-            DragGesture(minimumDistance: 4)
-                .updating($bottomPanelDrag) { value, state, _ in
-                    // Live offset while the user's finger is down. We
-                    // resist motion in the direction that would already
-                    // be saturated (dragging down further when already
-                    // collapsed, dragging up further when already
-                    // expanded) by clamping to a soft range so the
-                    // panel doesn't fly off the screen mid-drag.
-                    let t = value.translation.height
-                    if isBottomPanelCollapsed {
-                        // Already down. Allow upward drag (negative)
-                        // freely; ignore further downward drag.
-                        state = min(0, t)
-                    } else {
-                        // Already up. Allow downward drag (positive)
-                        // freely; ignore further upward drag.
-                        state = max(0, t)
-                    }
-                }
-                .onEnded { value in
-                    let t = value.translation.height
-                    let snapThreshold: CGFloat = 30
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        if isBottomPanelCollapsed {
-                            // Pull-up gesture re-expands.
-                            if t < -snapThreshold { isBottomPanelCollapsed = false }
-                        } else {
-                            // Pull-down gesture collapses.
-                            if t > snapThreshold { isBottomPanelCollapsed = true }
-                        }
-                    }
-                }
-        )
-        .accessibilityElement()
-        .accessibilityLabel(isBottomPanelCollapsed ? "Show trip options" : "Hide trip options")
-        .accessibilityAddTraits(.isButton)
-    }
-
-    /// Offset applied to the bottom block (time row + panel) while the
-    /// user drags the handle. Combines the snapped collapsed/expanded
-    /// base with the live finger translation. The collapsed base
-    /// offset is intentionally 0 — the panel collapses by hiding the
-    /// itinerary list inside the card (the drag handle and mode bar
-    /// both stay visible) rather than translating the whole stack, so
-    /// the panel header stays anchored to the same screen position
-    /// whether it's collapsed or not. The live drag translation is
-    /// layered on top for tactile feedback during the swipe itself.
-    private var liveBottomPanelOffset: CGFloat {
-        bottomPanelDrag
     }
 
     /// Format a total-seconds duration as "12 min" or "1 h 5 min" / "2 h".
