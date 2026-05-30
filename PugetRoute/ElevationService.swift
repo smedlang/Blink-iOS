@@ -19,9 +19,11 @@ struct ElevationProfile: Equatable, Codable {
     let climbMeters: Double
     /// Sum of all *negative* deltas (returned as a positive number).
     let descentMeters: Double
-    /// Max absolute grade observed over a rolling ~80m window along the
-    /// route. Using a window instead of point-to-point keeps a single SRTM
-    /// quantization step from blowing the grade up to 10%+.
+    /// Max **ascent** grade observed over a rolling ~80m window along
+    /// the route. Descents don't count — a 10% downhill is fun on a
+    /// bike, not a warning, so the steepness classifier shouldn't fire
+    /// on it. Using a rolling window instead of point-to-point keeps a
+    /// single SRTM quantization step from blowing the grade up to 10%+.
     let maxGradePercent: Double
 
     var climbFeet:   Int { Int((climbMeters   * 3.28084).rounded()) }
@@ -197,18 +199,18 @@ enum ElevationService {
         }
         if legByPolyline.isEmpty { return its }
 
-        var climbByPolyline: [String: Double] = [:]
-        await withTaskGroup(of: (String, Double).self) { group in
+        var profileByPolyline: [String: (climbMeters: Double, maxGradePercent: Double)] = [:]
+        await withTaskGroup(of: (String, Double, Double).self) { group in
             for (poly, leg) in legByPolyline {
                 group.addTask {
                     if let p = try? await profile(for: leg) {
-                        return (poly, p.climbMeters)
+                        return (poly, p.climbMeters, p.maxGradePercent)
                     }
-                    return (poly, 0)
+                    return (poly, 0, 0)
                 }
             }
-            for await (poly, climb) in group {
-                climbByPolyline[poly] = climb
+            for await (poly, climb, peak) in group {
+                profileByPolyline[poly] = (climb, peak)
             }
         }
 
@@ -218,8 +220,10 @@ enum ElevationService {
             copy.legs = copy.legs.map { leg in
                 guard isBike(leg.mode) else { return leg }
                 var l = leg
-                let climb = climbByPolyline[leg.legGeometry.points] ?? 0
+                let entry = profileByPolyline[leg.legGeometry.points] ?? (0, 0)
+                let climb = entry.climbMeters
                 l.climbMeters = climb
+                l.maxGradePercent = entry.maxGradePercent
                 // E-bike overrides standard pace with a fixed motor-cruise
                 // speed; standard bikes use the user's pace pick. Climb
                 // penalty also varies by kind — e-bikes pay a much lower
@@ -454,9 +458,11 @@ enum ElevationService {
             if dE > 0 { climb += dE } else { descent -= dE }
         }
 
-        // Max grade over a rolling window using OTP's actual along-leg
-        // distances (exact, not haversine-estimated). End-of-leg samples
-        // that can't fill the window are skipped.
+        // Max ascent grade over a rolling window using OTP's actual
+        // along-leg distances (exact, not haversine-estimated).
+        // Descents map to 0 (we don't warn on downhills), so a window
+        // whose net change is negative or zero contributes nothing.
+        // End-of-leg samples that can't fill the window are skipped.
         var maxGrade: Double = 0
         for i in 0..<elev.count - 1 {
             var acc = 0.0
@@ -467,7 +473,7 @@ enum ElevationService {
             }
             if acc < gradeWindowMeters * 0.5 { continue }
             let dE = elev[j] - elev[i]
-            let grade = abs(dE) / acc * 100
+            let grade = max(0, dE) / acc * 100
             if grade > maxGrade { maxGrade = grade }
         }
 
@@ -541,6 +547,11 @@ enum ElevationService {
         // climbs (Seattle blocks tend to be 80–100m, so one block's worth
         // of hill still shows up clearly).
         let distances = segmentDistances(sampled)
+        // Ascent-only: descents map to 0 so we don't classify a 10%
+        // downhill as "steep." See the matching change above for the
+        // OTP-supplied profile path; both code paths feed the same
+        // `maxGradePercent` field that the trip-level steep/moderate
+        // classifier reads.
         var maxGrade: Double = 0
         for i in 0..<elev.count - 1 {
             var acc = 0.0
@@ -551,7 +562,7 @@ enum ElevationService {
             }
             if acc < gradeWindowMeters * 0.5 { continue }  // too close to end
             let dE = elev[j] - elev[i]
-            let grade = abs(dE) / acc * 100
+            let grade = max(0, dE) / acc * 100
             if grade > maxGrade { maxGrade = grade }
         }
 

@@ -517,23 +517,26 @@ struct ItineraryDetailView: View {
                     tint: Palette.bikeInfra
                 )
             }
-            // Bike attributes (climb feet, steep flag) — plain caption
-            // text, since these describe the bike portion above rather
-            // than being legs of their own.
-            let extras = bikeExtraSummaryParts
-            if !extras.isEmpty {
+            // Total climb — mountain-icon capsule color-coded by trip
+            // hill severity. Red for steep (any leg's peak grade ≥10%
+            // or avg ≥5%), orange for moderate (peak ≥6% or avg ≥3%),
+            // yellow otherwise. Same buckets as the per-leg HillBadge
+            // so the trip-summary chip and the per-leg badges agree.
+            if let label = hillBubbleLabel {
                 if itinerary.bikeMinutes > 0 {
                     Text("•").font(.caption).foregroundColor(.secondary)
                 }
-                Text(extras.joined(separator: " • "))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                summaryBubble(
+                    icon: "mountain.2.fill",
+                    label: label,
+                    tint: hillBubbleTint
+                )
             }
             // Transit lines — each rendered as a brand-tinted capsule,
             // chevron between consecutive legs.
             let transitLegs = itinerary.legs.filter { $0.isTransit }
             if !transitLegs.isEmpty {
-                let hasPrefix = itinerary.bikeMinutes > 0 || !extras.isEmpty
+                let hasPrefix = itinerary.bikeMinutes > 0 || hillBubbleLabel != nil
                 if hasPrefix {
                     Text("•").font(.caption).foregroundColor(.secondary)
                 }
@@ -553,22 +556,26 @@ struct ItineraryDetailView: View {
         }
     }
 
-    /// Bike-attribute summary parts (total climb feet, "steep" flag).
-    /// Mirrors the climb/steep logic in `Itinerary.summary`; returned
-    /// as separate strings so the view can join them with "•" between
-    /// the bike bubble and the transit bubbles. The bike duration
-    /// itself is now rendered as a capsule, so it's not in this list.
-    private var bikeExtraSummaryParts: [String] {
-        var parts: [String] = []
+    /// Climb-feet label for the hill bubble. Returns nil when the
+    /// trip's total climb is below ~10 m (33 ft) — trivially flat
+    /// trips don't get a bubble at all. Returns "228 ft" otherwise.
+    private var hillBubbleLabel: String? {
         let totalClimb = itinerary.legs.compactMap { $0.climbMeters }.reduce(0, +)
-        if totalClimb >= 10 {
-            let feet = Int((totalClimb * 3.28084).rounded())
-            parts.append("↗ \(feet) ft")
-        }
-        if itinerary.hasSteepBikeLeg {
-            parts.append("steep")
-        }
-        return parts
+        guard totalClimb >= 10 else { return nil }
+        let feet = Int((totalClimb * 3.28084).rounded())
+        return "\(feet) ft"
+    }
+
+    /// Color for the hill bubble — encodes trip-level difficulty.
+    /// Red for steep, orange for moderate, yellow otherwise (light
+    /// elevation that's still worth flagging). Thresholds and
+    /// precedence come from `Itinerary.hasSteepBikeLeg` /
+    /// `hasModerateBikeLeg` which mirror the per-leg `HillBadge`
+    /// classifier in `ElevationProfile.difficulty`.
+    private var hillBubbleTint: Color {
+        if itinerary.hasSteepBikeLeg { return .red }
+        if itinerary.hasModerateBikeLeg { return .orange }
+        return .yellow
     }
 
     /// Mini brand-colored capsule used by every bubble in the trip
@@ -861,16 +868,6 @@ private struct LegDetailRow: View {
                     }
                     .font(.caption).foregroundColor(.secondary)
 
-                    if !leg.from.name.isEmpty {
-                        Text("From \(leg.from.name)")
-                            .font(.caption2).foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-                    if !leg.to.name.isEmpty {
-                        Text("To \(leg.to.name)")
-                            .font(.caption2).foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
                     // Hill profile for bike legs only (walk legs are usually
                     // short enough that elevation isn't interesting).
                     if isBike {

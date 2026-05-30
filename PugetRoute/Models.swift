@@ -521,6 +521,16 @@ struct Leg: Decodable, Identifiable {
     /// elevation fetch hasn't returned yet.
     var climbMeters: Double? = nil
 
+    /// Max grade percent (over the rolling ~80 m window) observed
+    /// along this leg's polyline. Stamped alongside `climbMeters` by
+    /// `ElevationService.stampClientBikeDurations`. Used by
+    /// `Itinerary.hasSteepBikeLeg` to catch bimodal routes whose
+    /// average grade dilutes the steep portion below the avg-grade
+    /// threshold (e.g., flat waterfront + short Queen Anne wall).
+    /// Nil for walk/transit legs and for bike legs whose elevation
+    /// hasn't resolved yet.
+    var maxGradePercent: Double? = nil
+
     /// Client-computed duration for this leg, in seconds. For bike
     /// legs we ignore OTP's `(endTime - startTime)` and use our own
     /// model: `distance / bikePace.metersPerSecond + climb * 3.9`.
@@ -944,15 +954,17 @@ extension Itinerary {
             let feet = Int((totalClimb * 3.28084).rounded())
             parts.append("↗ \(feet) ft")
         }
-        // Steep-hills flag: any single bike leg averaging ≥5% grade over
-        // ≥500 m. Captures the "you're going to feel this" climbs
-        // (Madison, James, Galer, Yesler) without false-positiving on
-        // short steep blocks where you can just dismount briefly, and
-        // without false-negativing on long gradual ascents that
-        // average under 5% but total a lot of climb (the climb-feet
-        // line above already flags those).
+        // Hill-warning flag: "steep" for any leg with ≥5% avg grade
+        // over ≥500 m or peak windowed grade ≥10% (catches the
+        // bimodal case where a short Queen Anne / James / Madison
+        // wall is mixed with flat sections); "moderate hills" for
+        // 3-5% avg or 6-10% peak when not already steep. Same
+        // thresholds as the per-leg HillBadge so trip-level and
+        // per-leg labels agree.
         if hasSteepBikeLeg {
             parts.append("steep")
+        } else if hasModerateBikeLeg {
+            parts.append("moderate hills")
         }
         // Transit lines: name them ("D Line", "540", "Link") instead of
         // a generic "N transit" count. The per-leg rows below in the
@@ -969,21 +981,49 @@ extension Itinerary {
         return parts.joined(separator: " • ")
     }
 
-    /// True if any bike leg in this itinerary climbs ≥5% on average over
-    /// at least 500 m of distance. Per-leg average grade is a rough
-    /// proxy — a leg that's flat-then-steep will average out and might
-    /// miss the threshold even when the steep portion is brutal — but
-    /// most Seattle hill legs aren't that bimodal, and this catches the
-    /// common case (climb out of downtown into Capitol Hill, ascend
-    /// Madison, etc.). Returns false while elevation is still loading
-    /// (climbMeters not yet stamped) so the summary doesn't flicker.
+    /// True if any bike leg in this itinerary qualifies as "steep" —
+    /// either the leg's average grade is ≥5% (the long-distance hill
+    /// case: climb out of downtown into Capitol Hill, ascend Madison)
+    /// **or** its peak windowed grade is ≥10% (the bimodal case: flat
+    /// waterfront plus a short Queen Anne wall, where averaging would
+    /// dilute the wall below 5%). Peak grade is read from each leg's
+    /// `maxGradePercent`, stamped by
+    /// `ElevationService.stampClientBikeDurations` alongside
+    /// `climbMeters`. Returns false while elevation is still loading
+    /// so the summary doesn't flicker.
+    ///
+    /// The 10% peak threshold matches the per-leg `HillBadge.steep`
+    /// classifier in `ElevationProfile.difficulty`, so trip-level
+    /// "steep" and per-leg-badge "steep red" are saying the same
+    /// thing about the same data.
     var hasSteepBikeLeg: Bool {
         for leg in legs {
             guard leg.mode == "BICYCLE" || leg.mode == "BICYCLE_RENT" else { continue }
-            guard let climb = leg.climbMeters, climb > 0 else { continue }
-            guard leg.distance >= 500 else { continue }
-            let grade = climb / leg.distance
-            if grade >= 0.05 { return true }
+            if let peak = leg.maxGradePercent, peak >= 10 { return true }
+            guard let climb = leg.climbMeters, climb > 0,
+                  leg.distance >= 500 else { continue }
+            let avgGrade = climb / leg.distance
+            if avgGrade >= 0.05 { return true }
+        }
+        return false
+    }
+
+    /// True if any bike leg qualifies as "moderate hill" but doesn't
+    /// already qualify as steep — either avg grade in 3–5% over a
+    /// ≥500 m bike leg, or peak windowed grade in 6–10%. Matches the
+    /// `HillBadge.hilly` classifier in `ElevationProfile.difficulty`
+    /// so trip-level "moderate" and per-leg "hilly orange" agree.
+    /// Returns false if `hasSteepBikeLeg` is already true — steep
+    /// wins; we don't double-label a trip "Steep + Moderate."
+    var hasModerateBikeLeg: Bool {
+        guard !hasSteepBikeLeg else { return false }
+        for leg in legs {
+            guard leg.mode == "BICYCLE" || leg.mode == "BICYCLE_RENT" else { continue }
+            if let peak = leg.maxGradePercent, peak >= 6 { return true }
+            guard let climb = leg.climbMeters, climb > 0,
+                  leg.distance >= 500 else { continue }
+            let avgGrade = climb / leg.distance
+            if avgGrade >= 0.03 { return true }
         }
         return false
     }
