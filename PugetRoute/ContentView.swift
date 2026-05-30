@@ -656,6 +656,16 @@ struct ContentView: View {
         }
     }
 
+    /// True when the currently-displayed itineraries include at
+    /// least one whose start time is already in the past. Drives
+    /// the refresh affordance in the bottom panel — once the user's
+    /// soonest planned option has slipped behind clock time, the
+    /// remaining options are stale and a re-plan is the right move.
+    private var hasStaleItineraries: Bool {
+        let now = Date()
+        return itineraries.contains { $0.startDate < now }
+    }
+
     /// Format a total-seconds duration as "12 min" or "1 h 5 min" / "2 h".
     /// Returns "—" for a nil duration so the pill renders a visible but
     /// de-emphasized placeholder while that mode's query is still in flight.
@@ -691,6 +701,27 @@ struct ContentView: View {
                 .background(.regularMaterial, in: Capsule())
             }
             .buttonStyle(.plain)
+
+            // Icon-only refresh affordance — visible only when at
+            // least one of the currently-shown itineraries has a
+            // start time already in the past (the soonest options
+            // have slipped behind clock time). Tapping fires
+            // planTrip() with the current time. Hidden while a plan
+            // is already in flight so we don't double-fire.
+            if hasStaleItineraries && !isLoading {
+                Button {
+                    planTrip()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.subheadline).bold()
+                        .foregroundColor(.accentColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Refresh trip options")
+            }
 
             // Preferences moved to the small slider icon at the top of
             // the screen (next to the swap button) so it's reachable in
