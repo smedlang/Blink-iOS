@@ -638,12 +638,12 @@ struct TripNavigationView: View {
             }
 
             // Only End here — navigation auto-advances as the user
-            // walks/bikes into each maneuver and when transit legs reach
-            // their scheduled end time, so a manual advance button
-            // isn't needed. Manual reroute is also gone from this row;
-            // off-route detection still triggers `manualReroute()`
-            // automatically when the user drifts too far from the
-            // active leg's polyline.
+            // physically moves past each maneuver (walk/bike) or
+            // reaches the alighting stop (transit), so a manual
+            // advance button isn't needed. Manual reroute is also
+            // gone from this row; off-route detection still triggers
+            // `manualReroute()` automatically when the user drifts
+            // too far from the active leg's polyline.
             HStack {
                 Spacer()
                 Button {
@@ -685,8 +685,6 @@ struct TripNavigationView: View {
     /// without competing with the primary instruction text.
     @ViewBuilder
     private func bannerStepControls(for leg: Leg) -> some View {
-        let stepCount = leg.steps?.count ?? 0
-        let showStepCounter = stepCount > 1
         HStack(spacing: 10) {
             Button {
                 goBack()
@@ -702,16 +700,6 @@ struct TripNavigationView: View {
             .disabled(isAtFirstStep)
             .opacity(isAtFirstStep ? 0.35 : 0.9)
             .accessibilityLabel("Previous step")
-
-            if showStepCounter {
-                Text("\(min(currentStepIndex + 1, stepCount)) / \(stepCount)")
-                    .font(.caption).foregroundColor(.white.opacity(0.85))
-                    .monospacedDigit()
-            } else {
-                Text("Leg \(currentLegIndex + 1) / \(itinerary.legs.count)")
-                    .font(.caption).foregroundColor(.white.opacity(0.85))
-                    .monospacedDigit()
-            }
 
             Button {
                 advance()
@@ -788,33 +776,37 @@ struct TripNavigationView: View {
         offRouteStreak = 0
     }
 
-    /// Auto-advance if the user has progressed past the next maneuver, or if
-    /// a transit leg's scheduled end has passed.
+    /// Auto-advance once the user has physically progressed past
+    /// the current maneuver (walk/bike) or the alighting stop
+    /// (transit). Time is never the trigger — we don't auto-advance
+    /// just because clock time says a bus "should have" arrived.
+    /// That used to be the transit-leg trigger but caused the
+    /// "tap GO after the plan's original start time → rapid-fire
+    /// through every stale leg in a single tick" bug. Location-only
+    /// means the user is always in control: their phone has to have
+    /// actually moved past the relevant point to advance.
     ///
-    /// Walk/bike progression uses monotonic polyline-snap rather than raw
-    /// "within 20m of the next maneuver point." The old proximity check fired
-    /// inconsistently — at intersections where multiple steps share a corner,
-    /// a 20m radius matches the *current* maneuver and the *next* one
-    /// simultaneously, so the banner would skip a step or stay stuck. Snapping
-    /// the GPS fix to the closest vertex on the leg polyline and only
-    /// advancing when that vertex passes the next step's anchor gives a
-    /// stable "you are here" reading that progresses one step at a time.
+    /// Progression uses monotonic polyline-snap rather than raw
+    /// "within 20m of the next maneuver point." The old proximity
+    /// check fired inconsistently — at intersections where multiple
+    /// steps share a corner, a 20m radius matches the *current*
+    /// maneuver and the *next* one simultaneously, so the banner
+    /// would skip a step or stay stuck. Snapping the GPS fix to the
+    /// closest vertex on the leg polyline and only advancing when
+    /// that vertex passes the next step's anchor gives a stable
+    /// "you are here" reading that progresses one step at a time.
     private func tryAutoAdvance() {
         guard let leg = currentLeg else { return }
-        if leg.isTransit {
-            // Use the realtime-adjusted end so a delayed bus doesn't
-            // get auto-advanced past while the user is still on it.
-            // arrivalDelay is refreshed every 30 s by the realtime
-            // poll; effectiveEndDate folds it in.
-            if now >= leg.effectiveEndDate {
-                advance()
-            }
-            return
-        }
         guard let user = location.lastLocation else { return }
-        // Reject very low-quality fixes — a 100m ±accuracy reading would
-        // snap to the wrong vertex and false-advance through several steps.
-        guard user.horizontalAccuracy > 0, user.horizontalAccuracy < 35 else { return }
+        // GPS quality cutoff — a 100m ±accuracy reading would snap to
+        // the wrong vertex and false-advance through several steps.
+        // Transit legs get a slightly looser bound (50m vs 35m for
+        // walk/bike) because the phone is inside a vehicle and the
+        // signal is typically noisier; we still reject obviously
+        // bad fixes.
+        let accuracyCap: CLLocationDistance = leg.isTransit ? 50 : 35
+        guard user.horizontalAccuracy > 0,
+              user.horizontalAccuracy < accuracyCap else { return }
 
         let pts = PolylineDecoder.decode(leg.legGeometry.points)
         guard pts.count >= 2 else { return }
@@ -823,9 +815,21 @@ struct TripNavigationView: View {
         // GPS jitter that puts us "earlier" doesn't undo a real maneuver.
         if snap > legProgressIndex { legProgressIndex = snap }
 
-        // Find the polyline index nearest to the next step's anchor; once
-        // our progress is past that, the user has visibly moved through that
-        // maneuver and we advance.
+        if leg.isTransit {
+            // For transit, the "maneuvers" are just board (already
+            // past, by definition of being on this leg) and alight
+            // (the leg's endpoint). Advance once the user is at or
+            // past the last vertex of the bus's polyline.
+            let endIdx = pts.count - 1
+            if legProgressIndex >= endIdx - 1 {
+                advance()
+            }
+            return
+        }
+
+        // Walk/bike — find the polyline index nearest to the next step's
+        // anchor; once our progress is past that, the user has visibly
+        // moved through that maneuver and we advance.
         guard let steps = leg.steps,
               steps.indices.contains(currentStepIndex + 1) else {
             // No more steps in this leg — fall back to "near the leg endpoint."
