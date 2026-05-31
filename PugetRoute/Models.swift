@@ -918,6 +918,15 @@ extension Itinerary {
     /// itinerary-level `duration` when no legs are present (defensive
     /// — shouldn't happen in practice).
     var effectiveDurationSeconds: Int {
+        // Wall-clock duration from the reconciled timeline — covers
+        // transit realtime delays and waits at stops, not just the
+        // sum of per-leg stamped durations. Falls back to the
+        // legacy sum-of-displayDurationSeconds (then OTP's itinerary
+        // `duration`) if the timeline is somehow empty.
+        let timeline = effectiveTimeline()
+        if let first = timeline.first, let last = timeline.last {
+            return max(0, Int(last.endDate.timeIntervalSince(first.startDate)))
+        }
         let summed = legs.map(\.displayDurationSeconds).reduce(0, +)
         return summed > 0 ? summed : duration
     }
@@ -1046,7 +1055,20 @@ extension Itinerary {
             .reduce(0) { $0 + $1.distance } / 1609.34
     }
 
-    var startDate: Date { Date(timeIntervalSince1970: TimeInterval(startTime) / 1000) }
+    /// First leg's reconciled start time from `effectiveTimeline()` —
+    /// for trips that begin with a walk/bike access leg, this is
+    /// the back-anchored "leave by" time, not OTP's raw `startTime`
+    /// (which is what OTP would have you start at to hit the bus
+    /// schedule at its flat-speed assumption). All display sites
+    /// (the option card's time range, the trip-detail header, the
+    /// past-start filter, the refresh-stale check) read off this so
+    /// they agree with the trip-detail body. Falls back to OTP's
+    /// raw startTime if the timeline is somehow empty (defensive —
+    /// happens only on legs.count == 0).
+    var startDate: Date {
+        effectiveTimeline().first?.startDate
+            ?? Date(timeIntervalSince1970: TimeInterval(startTime) / 1000)
+    }
 
     /// True if this itinerary has already arrived (endTime in the past)
     /// at the moment the property is read. We key off arrival rather
@@ -1073,7 +1095,8 @@ extension Itinerary {
     /// distinction stays visible if we ever bring slope-adjusted ETAs
     /// back behind a setting.
     var endDate: Date {
-        startDate.addingTimeInterval(TimeInterval(effectiveDurationSeconds))
+        effectiveTimeline().last?.endDate
+            ?? startDate.addingTimeInterval(TimeInterval(effectiveDurationSeconds))
     }
 
     /// "3:45 PM → 4:30 PM"
@@ -1082,6 +1105,146 @@ extension Itinerary {
         f.dateFormat = "h:mm a"
         return "\(f.string(from: startDate)) → \(f.string(from: endDate))"
     }
+
+    /// Per-leg start/end timestamps reconciled into a single
+    /// timeline. Resolves the inconsistency where the trip detail
+    /// page used to mix three different time sources — OTP-raw
+    /// scheduled times for leg ranges, client-stamped durations for
+    /// duration labels, and realtime-adjusted times for transit
+    /// board/alight blocks — which made the numbers contradict each
+    /// other (bike "8 min" labeled across a "6:41 PM → 6:53 PM" 12-
+    /// minute span, transit alight at 7:07 PM followed by the next
+    /// bike leg starting at 7:01 PM, etc.).
+    ///
+    /// Single forward pass:
+    /// - Transit legs anchor to `leg.effectiveStartDate` /
+    ///   `effectiveEndDate` — realtime-delay-adjusted scheduled times.
+    ///   Buses don't wait for the rider, so they hold their schedule.
+    /// - Walk/bike legs start at the previous leg's end (or `anchor`
+    ///   for the first leg) and run for `leg.displayDurationSeconds`
+    ///   (pace + climb stamped). The user can't bend transit times,
+    ///   but their own legs honor the user's actual pace.
+    /// - `waitBefore` is the gap between the previous leg's end and
+    ///   this leg's start. Positive = wait at the stop. **Negative**
+    ///   = bike pace would have the user arrive *after* the bus
+    ///   departs (a "missed connection") — UI surfaces this as a
+    ///   warning row so it's honest rather than silently lying.
+    ///
+    /// `anchor`:
+    /// - **nil** (Preview / browsing): the FIRST walk/bike leg is
+    ///   *back-anchored* from the next transit's scheduled
+    ///   departure — i.e., its end = next-transit.start, its start
+    ///   = that minus the leg's stamped duration. Gives the rider a
+    ///   "leave by X to catch the bus on time" reading instead of
+    ///   "arrive at the stop and wait 10 min." Mid-trip walk/bike
+    ///   legs (between two transits, or after the last transit)
+    ///   forward-chain from the previous leg's end so any waits
+    ///   surface at the next transit boarding — that's where the
+    ///   user is actually standing around in real life.
+    /// - **Date()** (live nav): every leg forward-chains from the
+    ///   anchor, because the user has already started moving — we
+    ///   can't time-travel them back to leave later.
+    ///
+    /// Either way: transit legs hold their realtime-adjusted
+    /// schedule (`effectiveStartDate / effectiveEndDate`). Buses
+    /// don't wait for the rider.
+    func effectiveTimeline(anchor: Date? = nil) -> [LegTimeline] {
+        let n = legs.count
+        guard n > 0 else { return [] }
+
+        var starts = Array<Date?>(repeating: nil, count: n)
+        var ends   = Array<Date?>(repeating: nil, count: n)
+
+        // 1. Anchor every transit leg to its realtime schedule.
+        for i in 0..<n where legs[i].isTransit {
+            starts[i] = legs[i].effectiveStartDate
+            ends[i]   = legs[i].effectiveEndDate
+        }
+
+        // 2. Walk/bike legs.
+        for i in 0..<n {
+            if starts[i] != nil { continue }
+
+            // First leg, Preview mode (no anchor): back-anchor from
+            // the next transit so the trip starts as late as
+            // possible while still catching the bus, **minus a small
+            // buffer** so the user arrives a couple minutes early
+            // rather than sprinting to catch a bus that's pulling
+            // up. The buffer falls in the "wait at the stop" window
+            // and matches typical recommended arrival timing for
+            // local transit. Cascades backward through any preceding
+            // walk/bike legs in the same access chunk.
+            let busBoardingBuffer: TimeInterval = 120
+            if i == 0, anchor == nil {
+                let nextTransit = (1..<n).first { legs[$0].isTransit }
+                if let t = nextTransit, let transitStart = starts[t] {
+                    var endAt = transitStart.addingTimeInterval(-busBoardingBuffer)
+                    for k in stride(from: t - 1, through: 0, by: -1) {
+                        ends[k] = endAt
+                        let dur = TimeInterval(legs[k].displayDurationSeconds)
+                        starts[k] = endAt.addingTimeInterval(-dur)
+                        endAt = starts[k]!
+                    }
+                    continue
+                }
+            }
+
+            // All other walk/bike legs: forward-chain from previous
+            // leg's end, then `anchor`, then the leg's own raw
+            // start time (last-resort fallback).
+            let s = (i > 0 ? ends[i - 1] : nil) ?? anchor ?? legs[i].startDate
+            starts[i] = s
+            ends[i]   = s.addingTimeInterval(TimeInterval(legs[i].displayDurationSeconds))
+        }
+
+        // 3. Build the result + compute waitBefore from finalized
+        //    starts/ends.
+        var out: [LegTimeline] = []
+        out.reserveCapacity(n)
+        for i in 0..<n {
+            let s = starts[i] ?? Date()
+            let e = ends[i]   ?? s
+            let waitBefore: TimeInterval
+            if i > 0, let prevEnd = ends[i - 1] {
+                waitBefore = s.timeIntervalSince(prevEnd)
+            } else {
+                waitBefore = 0
+            }
+            out.append(LegTimeline(
+                index: i,
+                startDate: s,
+                endDate: e,
+                waitBefore: waitBefore
+            ))
+        }
+        return out
+    }
+}
+
+/// One leg's place on the reconciled `Itinerary.effectiveTimeline`.
+/// See the docs there for how each field is derived.
+struct LegTimeline {
+    /// Position in the itinerary's `legs` array — handy for
+    /// zipping the timeline back with legs at render time.
+    let index: Int
+    let startDate: Date
+    let endDate: Date
+    /// Gap from the previous leg's end to this leg's start.
+    /// - `> 60`: surface as a "wait X min" row before the leg
+    ///   (typically before a transit boarding).
+    /// - `~0`: continuous; no gap to show.
+    /// - `< 0`: **missed connection** — the previous walk/bike leg
+    ///   would, at the user's stamped pace, end after this transit
+    ///   leg has already departed. UI should flag.
+    let waitBefore: TimeInterval
+
+    var missedConnection: Bool { waitBefore < 0 }
+
+    /// Wall-clock duration (`endDate - startDate`) in seconds.
+    /// Use this for the per-leg "X min" label so duration label
+    /// and time-range label always agree.
+    var durationSeconds: Int { Int(endDate.timeIntervalSince(startDate)) }
+    var durationMinutes: Int { max(0, durationSeconds / 60) }
 }
 
 extension Leg {

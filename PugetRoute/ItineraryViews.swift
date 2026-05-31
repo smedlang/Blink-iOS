@@ -365,20 +365,32 @@ struct ItineraryDetailView: View {
     @State private var showPreviewSteps = false
 
     var body: some View {
-        NavigationStack {
+        // Single reconciled timeline drives every clock-time + duration
+        // on this page so they can't disagree. See
+        // `Itinerary.effectiveTimeline` for the model.
+        let timeline = itinerary.effectiveTimeline()
+        return NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    header
+                    header(timeline: timeline)
                     goButton
                     Divider()
                     ForEach(Array(itinerary.legs.enumerated()), id: \.offset) { idx, leg in
-                        LegDetailRow(leg: leg)
+                        let entry = timeline.indices.contains(idx) ? timeline[idx] : nil
+                        // Surface a "wait X min" hint or a missed-connection
+                        // warning before this leg when relevant. Only shows
+                        // up between legs (idx > 0) since the gap is
+                        // relative to the previous leg's end.
+                        if idx > 0, let entry = entry {
+                            connectionRow(for: entry, leg: leg)
+                        }
+                        LegDetailRow(leg: leg, timeline: entry)
                         if idx < itinerary.legs.count - 1 {
                             Divider().padding(.leading, 36)
                         }
                     }
                     Divider()
-                    arriveFooter
+                    arriveFooter(timeline: timeline)
                 }
                 .padding()
             }
@@ -485,14 +497,60 @@ struct ItineraryDetailView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(itinerary.formattedDuration)
+    private func header(timeline: [LegTimeline]) -> some View {
+        // Header reads its total + range off the reconciled timeline
+        // so a delayed bus + wait at the stop are reflected in the
+        // top-line "X min" and the time range, instead of the page
+        // saying "18 min, 6:41 → 6:59" while the legs below sum to
+        // something else.
+        let first = timeline.first?.startDate ?? itinerary.startDate
+        let last  = timeline.last?.endDate ?? itinerary.endDate
+        let totalSecs = max(0, Int(last.timeIntervalSince(first)))
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(Itinerary.formatMinutes(totalSecs / 60))
                 .font(.largeTitle).bold()
-            Text(itinerary.timeRange)
+            Text(Self.formatHM(first) + " → " + Self.formatHM(last))
                 .font(.subheadline).foregroundColor(.secondary)
             summaryRow
         }
+    }
+
+    /// "Wait 6 min" line shown between two legs when the gap is
+    /// big enough to flag (≥ 60 s), and a "Bike pace would miss
+    /// this bus by X min" warning when the gap is negative.
+    @ViewBuilder
+    private func connectionRow(for entry: LegTimeline, leg: Leg) -> some View {
+        if entry.missedConnection {
+            // Negative wait — at the rider's stamped pace they'd
+            // arrive after the bus pulls away. Surface this so the
+            // trip isn't silently inconsistent. The user can drop
+            // pace in Preferences or pick a different itinerary.
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                Text("Bike pace would miss this connection by \(Int(ceil(-entry.waitBefore / 60))) min")
+            }
+            .font(.caption).bold()
+            .foregroundColor(.red)
+            .padding(.leading, 36)
+        } else if entry.waitBefore >= 60 {
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                Text("Wait \(Int(entry.waitBefore / 60)) min")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .padding(.leading, 36)
+        }
+    }
+
+    /// "3:45 PM" formatter. Static so `LegDetailRow` can use the
+    /// same one without leaning on `Leg` / `Itinerary` string
+    /// accessors (those still read OTP-raw times rather than the
+    /// reconciled timeline).
+    static func formatHM(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f.string(from: d)
     }
 
     /// Trip summary line below the time range. Same content as
@@ -615,25 +673,23 @@ struct ItineraryDetailView: View {
         }
     }
 
-    private var arriveFooter: some View {
-        HStack(spacing: 10) {
+    private func arriveFooter(timeline: [LegTimeline]) -> some View {
+        // Last leg's reconciled end — covers realtime delays + wait
+        // time, instead of the old itinerary.endDate which was
+        // startDate + summed stamped durations and ignored both.
+        let arrival = timeline.last?.endDate ?? itinerary.endDate
+        return HStack(spacing: 10) {
             Image(systemName: "flag.checkered")
                 .foregroundColor(.secondary)
                 .frame(width: 26)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Arrive \(itinerary.legs.last?.to.name ?? "")")
                     .font(.subheadline).bold()
-                Text(formattedArrivalTime)
+                Text(Self.formatHM(arrival))
                     .font(.caption).foregroundColor(.secondary)
             }
             Spacer()
         }
-    }
-
-    private var formattedArrivalTime: String {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm a"
-        return f.string(from: itinerary.endDate)
     }
 }
 
@@ -779,6 +835,13 @@ private struct PreviewStepsList: View {
 /// Single leg row in the detail view.
 private struct LegDetailRow: View {
     let leg: Leg
+    /// Reconciled timeline entry for this leg, computed once by the
+    /// parent view (`ItineraryDetailView`) so duration label, time
+    /// range, and the "Board at ... / Get off at ..." times all
+    /// agree. Nil only if the parent didn't pass one — falls back to
+    /// the leg's own raw timestamps in that case (the pre-timeline
+    /// behavior).
+    var timeline: LegTimeline? = nil
     @State private var elevation: ElevationProfile?
     @State private var elevLoading: Bool = false
 
@@ -810,7 +873,7 @@ private struct LegDetailRow: View {
                     // Board / ride / alight block
                     Label {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("Board at \(leg.effectiveStartTimeString)").bold()
+                            Text("Board at \(boardTimeString)").bold()
                             Text(leg.from.name).foregroundColor(.secondary)
                             // Alternative-route departures. For each
                             // alternate bus (1 Line + 2 Line + ...),
@@ -843,7 +906,7 @@ private struct LegDetailRow: View {
 
                     Label {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("Get off at \(leg.effectiveEndTimeString)").bold()
+                            Text("Get off at \(alightTimeString)").bold()
                             Text(leg.to.name).foregroundColor(.secondary)
                         }
                     } icon: {
@@ -852,19 +915,20 @@ private struct LegDetailRow: View {
                     }
                     .font(.caption)
                 } else {
-                    // Walk / bike block. Per-leg minutes come from
-                    // `leg.durationMinutes`, which after planTrip's
-                    // stamping pass already includes climb, signal, and
-                    // Ballard-Locks penalties — the same number
-                    // everything else in the UI shows.
+                    // Walk / bike block. Duration and time range both
+                    // come from the reconciled timeline (passed in
+                    // from `ItineraryDetailView`) so the "X min"
+                    // label and the "h:mm → h:mm" range always agree,
+                    // and the start time picks up any realtime
+                    // delay from the previous transit leg.
                     HStack(spacing: 6) {
-                        Text("\(leg.durationMinutes) min")
+                        Text("\(displayMinutes) min")
                         if let d = leg.distanceString {
                             Text("·")
                             Text(d)
                         }
                         Text("·")
-                        Text("\(leg.startTimeString) → \(leg.endTimeString)")
+                        Text("\(timelineStartString) → \(timelineEndString)")
                     }
                     .font(.caption).foregroundColor(.secondary)
 
@@ -907,13 +971,22 @@ private struct LegDetailRow: View {
         case "WALK": return "Walk"
         case "BICYCLE", "BICYCLE_RENT": return "Bike"
         default:
-            // Just the primary route's display name. The chip
-            // rendering up in ItineraryRow renders alternatives as
-            // separate capsules, and the boarding block below this
-            // title surfaces each alternative as its own "or X Line
-            // at Y:YY" row — so the title doesn't need to repeat
-            // them. Keeping the title to a single line name also
-            // avoids the awkward slash-joined heading.
+            // Show "{route} → {alight stop}" rather than the bus's
+            // headsign destination. `Leg.displayName` reads
+            // `headsign` (the bus's final destination as printed on
+            // its front sign — useful when boarding, since that's
+            // how you identify the right bus), but on the trip
+            // detail page the rider already knows which bus to
+            // board (the per-leg card has its own board/alight
+            // block), so the title should say where THIS leg ends
+            // up dropping them. Falls back to displayName if the
+            // alight stop name is empty — defensive; OTP usually
+            // populates `to.name` for transit legs.
+            if let route = leg.route?.shortName ?? leg.route?.longName,
+               !route.isEmpty,
+               !leg.to.name.isEmpty {
+                return "\(route) → \(leg.to.name)"
+            }
             return leg.displayName
         }
     }
@@ -978,6 +1051,41 @@ private struct LegDetailRow: View {
         case "WALK":                    return .secondary
         default:                        return .primary
         }
+    }
+
+    // MARK: - Timeline-derived strings
+    //
+    // All four read off `timeline?` when the parent passed one in
+    // (every site that uses `LegDetailRow` from `ItineraryDetailView`
+    // does), falling back to the leg's own raw timestamps so the row
+    // still renders cleanly if someone reuses it elsewhere without
+    // a timeline.
+
+    /// `Itinerary.formatMinutes(...)` isn't accessible here (it's a
+    /// static on a different type with the same name); inline the
+    /// minute conversion. Floors below 1 → "1 min" so a sub-minute
+    /// leg doesn't render "0 min · 200 ft."
+    private var displayMinutes: Int {
+        if let mins = timeline?.durationMinutes, mins >= 1 {
+            return mins
+        }
+        return leg.durationMinutes
+    }
+
+    private var timelineStartString: String {
+        ItineraryDetailView.formatHM(timeline?.startDate ?? leg.startDate)
+    }
+
+    private var timelineEndString: String {
+        ItineraryDetailView.formatHM(timeline?.endDate ?? leg.endDate)
+    }
+
+    private var boardTimeString: String {
+        ItineraryDetailView.formatHM(timeline?.startDate ?? leg.effectiveStartDate)
+    }
+
+    private var alightTimeString: String {
+        ItineraryDetailView.formatHM(timeline?.endDate ?? leg.effectiveEndDate)
     }
 }
 
