@@ -920,68 +920,93 @@ struct TripNavigationView: View {
             latitude: leg.to.lat, longitude: leg.to.lon
         ))
         remainingMeters = max(remainingMeters, crowFliesToEnd)
-        // Speed: bike pace if we're on a bike leg, walking pace otherwise
-        // (walk legs are mostly transfers, so a fixed brisk-walk speed is
-        // close enough — we don't ask the user for their walking pace).
-        let speed: Double
+        // Bike legs go through `ElevationService.bikeLegDuration` so
+        // every term in the duration model (pace, climb, signals,
+        // stops, yields) stays in lockstep with what the planner
+        // stamped. Walk legs use a fixed brisk-walk speed — we
+        // don't ask the user for their walking pace.
         let isBikeLeg = leg.mode == "BICYCLE" || leg.mode == "BICYCLE_RENT"
+        var activeSecs: Double
         if isBikeLeg {
-            // E-bike overrides pace with its fixed motor-cruise speed.
-            speed = bikeKind.metersPerSecond(pace: bikePace)
+            // Rental legs (Lime) force `.electric` regardless of
+            // the user's BikeKind — Lime in Seattle is e-bike-only.
+            let effectiveKind: BikeKind = leg.isRental ? .electric : bikeKind
+            let totalMeters = max(leg.distance, 0)
+            let fraction = totalMeters > 0
+                ? min(1.0, max(0.0, remainingMeters / totalMeters))
+                : 1.0
+            let remainingClimb = max(0, (leg.climbMeters ?? 0) * fraction)
+            // Scale intersection seconds by the same fraction —
+            // signals are roughly uniformly distributed along the
+            // polyline, the same approximation we already accept
+            // for the climb scaling above.
+            let intersectionSecs = ElevationService.intersectionSeconds(
+                forLeg: leg, scaledBy: fraction
+            )
+            activeSecs = ElevationService.bikeLegDuration(
+                distance: remainingMeters,
+                climb: remainingClimb,
+                intersectionSeconds: intersectionSecs,
+                pace: bikePace,
+                kind: effectiveKind
+            )
         } else {
-            speed = 1.4 // ≈ 5 km/h, typical urban walking
-        }
-        var activeSecs = remainingMeters / max(speed, 0.5)
-        // Apply the same climb penalty the planner used (3.9 s/m) so
-        // the countdown matches the listed trip total. We don't have
-        // a polyline-position-aware climb measurement, so we scale the
-        // leg's total climb by the fraction of the leg still ahead.
-        // That overstates a downhill-then-uphill leg slightly and
-        // understates uphill-then-downhill, but matches average pace
-        // closely enough.
-        if isBikeLeg, let totalClimb = leg.climbMeters, totalClimb > 0 {
-            let totalMeters = leg.distance
-            if totalMeters > 0 {
-                let frac = min(1.0, max(0.0, remainingMeters / totalMeters))
-                let remainingClimb = totalClimb * frac
-                activeSecs += remainingClimb * bikeKind.climbSecondsPerMeter
-            }
+            activeSecs = remainingMeters / 1.4   // ≈ 5 km/h walk
         }
 
-        // Add the remaining legs' durations. Transit legs contribute
-        // schedule-bound time. Walk/bike legs: prefer the planner's
-        // stamped client-side estimate (which already includes pace
-        // and climb); fall back to recomputing from polyline length
-        // for legs that haven't been stamped (e.g., post-reroute).
-        var futureSecs = 0.0
+        // Walk forward through the remaining legs, computing each
+        // leg's predicted wall-clock end time. Transit legs are
+        // anchored to their realtime-adjusted schedule, which
+        // *absorbs early arrivals as wait time at the boarding
+        // stop* — without this, summing raw per-leg durations
+        // dropped the wait gap entirely and the countdown read
+        // shorter than `itinerary.endDate - now` by however much
+        // wait was at upcoming stops. That mismatch was the
+        // "live nav flashes a different number the moment GPS
+        // lands" bug.
+        var predictedEnd = now.addingTimeInterval(activeSecs)
         var futureMeters = 0.0
         for futureLeg in itinerary.legs.dropFirst(currentLegIndex + 1) {
             futureMeters += futureLeg.distance
             if futureLeg.isTransit {
-                futureSecs += Double(futureLeg.endTime - futureLeg.startTime) / 1000
+                let scheduledStart = futureLeg.effectiveStartDate
+                let scheduledEnd   = futureLeg.effectiveEndDate
+                if predictedEnd <= scheduledStart {
+                    // User arrives on time (or early — they wait at
+                    // the stop). Transit holds its schedule; trip
+                    // resumes at the realtime-adjusted alight time.
+                    predictedEnd = scheduledEnd
+                } else {
+                    // User is late and would miss this connection.
+                    // We don't currently re-plan, so just charge the
+                    // transit's nominal duration on top of where the
+                    // user actually is — keeps the countdown
+                    // non-zero rather than pretending we caught a
+                    // bus we didn't.
+                    let dur = scheduledEnd.timeIntervalSince(scheduledStart)
+                    predictedEnd = predictedEnd.addingTimeInterval(dur)
+                }
                 continue
             }
-            if let est = futureLeg.estimatedDurationSeconds {
-                futureSecs += Double(est)
-                continue
-            }
-            let fpts = PolylineDecoder.decode(futureLeg.legGeometry.points)
-            let meters = fpts.indices.dropFirst().reduce(0.0) { acc, i in
-                let a = fpts[i - 1], b = fpts[i]
-                return acc + CLLocation(latitude: a.latitude, longitude: a.longitude)
-                    .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
-            }
+            // Bike/walk: forward from predictedEnd.
+            let legSecs: Double
             let isFutureBike = futureLeg.mode == "BICYCLE" || futureLeg.mode == "BICYCLE_RENT"
-            // E-bike overrides the pace-derived speed with its fixed
-            // motor-cruise; walks always use the default walk speed (1.4).
-            let s: Double = isFutureBike ? bikeKind.metersPerSecond(pace: bikePace) : 1.4
-            var legSecs = meters / max(s, 0.5)
-            if isFutureBike, let c = futureLeg.climbMeters, c > 0 {
-                legSecs += c * bikeKind.climbSecondsPerMeter
+            if isFutureBike {
+                let effectiveKind: BikeKind = futureLeg.isRental ? .electric : bikeKind
+                let intersectionSecs = ElevationService.intersectionSeconds(forLeg: futureLeg)
+                legSecs = ElevationService.bikeLegDuration(
+                    distance: futureLeg.distance,
+                    climb: futureLeg.climbMeters ?? 0,
+                    intersectionSeconds: intersectionSecs,
+                    pace: bikePace,
+                    kind: effectiveKind
+                )
+            } else {
+                legSecs = futureLeg.distance / 1.4   // ≈ 5 km/h walk
             }
-            futureSecs += legSecs
+            predictedEnd = predictedEnd.addingTimeInterval(legSecs)
         }
-        liveRemainingSeconds = activeSecs + futureSecs
+        liveRemainingSeconds = max(0, predictedEnd.timeIntervalSince(now))
         liveRemainingMeters = remainingMeters + futureMeters
         liveActiveLegSeconds = activeSecs
         liveActiveLegMeters = remainingMeters
@@ -1352,31 +1377,32 @@ struct TripNavigationView: View {
         }
     }
 
-    /// Seconds remaining in the *current* leg. Falls back to the leg's
-    /// scheduled endTime when no live computation is available (transit
-    /// legs, no-GPS pre-roll). Used by `remainingTimeString`.
+    /// Seconds remaining in the *current* leg. Falls back to the
+    /// planner's stamped duration (bike/walk) or the realtime-
+    /// adjusted scheduled end (transit) when no live computation
+    /// is available — typically the moment between tapping GO and
+    /// the first GPS fix landing.
     ///
-    /// Special-case: if the leg hasn't started yet (`now < leg.startTime`
-    /// — happens when the user previews a future-leave-time trip),
-    /// `leg.endTime - now` includes the pre-start wait and flashes a
-    /// large placeholder before live overrides it (e.g. "17 min" briefly
-    /// for a 3-min bike leg planned to start 14 min from now). Use the
-    /// planner's stamped duration instead — it's the same pace+climb
-    /// model the live recompute uses, so the value barely moves once
-    /// GPS lands.
+    /// For bike/walk legs, we use `estimatedDurationSeconds` (the
+    /// pace + climb + intersection model the live recompute also
+    /// uses), not `leg.effectiveEndDate - now`. The latter is OTP's
+    /// flat-speed-planned end time, which doesn't match the stamped
+    /// model: at trip start the label would show e.g. 32 min (OTP's
+    /// estimate from a stale `startTime` to OTP's planned end), then
+    /// snap to 22 min the moment GPS lands and `liveActiveLegSeconds`
+    /// took over. Always reading the stamped duration eliminates
+    /// that flash.
+    ///
+    /// Transit legs still use `effectiveEndDate - now` so a bus that
+    /// becomes more delayed mid-ride pushes our "X min remaining"
+    /// forward as the realtime feed updates `arrivalDelay`.
     private var activeLegRemainingSeconds: TimeInterval {
         if let live = liveActiveLegSeconds { return max(0, live) }
         guard let leg = currentLeg else { return 0 }
-        let nowSec = now.timeIntervalSince1970
-        let legStart = Double(leg.startTime) / 1000
-        if nowSec < legStart, !leg.isTransit, let est = leg.estimatedDurationSeconds {
+        if !leg.isTransit, let est = leg.estimatedDurationSeconds {
             return max(0, Double(est))
         }
-        // Use the realtime-adjusted end so a bus that becomes more
-        // delayed mid-ride pushes our "X min remaining" forward. The
-        // realtime-refresh loop (refreshRealtimeForTransitLegs) updates
-        // arrivalDelay every 30 s; effectiveEndDate folds it in.
-        return max(0, leg.effectiveEndDate.timeIntervalSince1970 - nowSec)
+        return max(0, leg.effectiveEndDate.timeIntervalSince1970 - now.timeIntervalSince1970)
     }
 
     private var arrivalTimeString: String {

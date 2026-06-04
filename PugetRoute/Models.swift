@@ -798,23 +798,57 @@ extension Itinerary {
     /// per-leg estimate based on actual OSM intersection counts.
     static let signalPenaltySecondsPerMile: Double = 45
 
-    /// Average wait at a signaled intersection on a bike, in seconds.
-    /// Modeled on a typical Seattle bike-relevant signal — ~75 s cycle
-    /// with ~45 s red for the cross/bike approach: P(red on arrival)
-    /// ≈ 0.6, expected wait given red ≈ 22 s → ~13 s average wait,
-    /// plus ~2 s deceleration/acceleration ≈ 15 s. Bumped up from a
-    /// prior value of 9 s after comparing OTP-predicted bike times
-    /// against actual rider data; the old number consistently
-    /// under-estimated downtown/Capitol Hill trips with high signal
-    /// counts. Still tunable — this is the constant most worth
-    /// empirically calibrating as more trip-completion data arrives.
-    static let secondsPerTrafficSignal: Double = 15
+    /// Average time cost at a signaled intersection on a bike, in
+    /// seconds. Decomposed as:
+    ///
+    ///     P(red) × (wait_time + decel_accel) + approach_cost
+    ///
+    /// where:
+    /// - `P(red)` ≈ 0.6 (typical Seattle bike-relevant signal:
+    ///   75 s cycle, ~45 s red on the cross/bike approach)
+    /// - `wait_time` ≈ 20 s (expected wait given red)
+    /// - `decel_accel` ≈ 17 s (bike decel from cruise to stop ~8 s
+    ///   + accel back to cruise ~9 s) — only paid when you actually
+    ///   stop, i.e., conditional on red
+    /// - `approach_cost` ≈ 5 s (unconditional slowdown-to-scan
+    ///   that happens even on green: you brake a touch, look both
+    ///   ways, re-accelerate without coming to a full stop)
+    ///
+    ///     0.6 × (20 + 17) + 5 = 27.2 → 27 s
+    ///
+    /// History: started at 9 s (P(red) × wait only); 15 s after
+    /// rider feedback that downtown trips felt under-estimated;
+    /// 20 s after adding an 8 s approach term; 30 s after bumping
+    /// the approach to 17 s (treated unconditionally); reorganized
+    /// to 27 s in 2026-06 — same per-signal magnitude but with the
+    /// decel/accel correctly scoped to the red-only branch and a
+    /// smaller approach cost paid every time. The total now reads
+    /// the way the physics actually works.
+    ///
+    /// Still the most-worth-empirically-calibrating number we have
+    /// — the formula is defensible but the inputs are model averages
+    /// and rider perception is biased toward worst-case signals
+    /// (three reds in a row leaves a stronger impression than ten
+    /// greens).
+    static let secondsPerTrafficSignal: Double = 27
 
-    /// Average time lost at a stop sign for a bike. Always a full stop
-    /// (legally; many riders Idaho-stop, but reservations on time
-    /// estimates being optimistic mean we account for the lawful case).
-    /// Quick to clear once stopped, hence shorter than a signal.
-    static let secondsPerStopSign: Double = 4
+    /// Average time lost at a stop sign for a bike. Modeled as the
+    /// decel-then-accel envelope (~17 s — same as the conditional
+    /// decel/accel term in `secondsPerTrafficSignal`), since a stop
+    /// sign forces a full stop every time (no probability factor).
+    /// Foot-down + scan is folded into the envelope rather than
+    /// added separately; the 17 s number is already conservative
+    /// for the bike's cruise → stop → cruise transition.
+    ///
+    /// History: 4 → 6 → 17 (2026-06). The earlier values modeled
+    /// only the at-rest portion (foot down + clear) and ignored
+    /// the decel/accel motion around it, which under-counted by
+    /// roughly the magnitude we've bumped here.
+    ///
+    /// Note: legally always a full stop. Many riders Idaho-roll
+    /// (treat stop as yield), but ETA pessimism + accounting for
+    /// the lawful case means we use the full stop cost.
+    static let secondsPerStopSign: Double = 17
 
     /// Average time lost at a yield / give_way for a bike. Often
     /// rolled-through with no real stop; small deceleration penalty.

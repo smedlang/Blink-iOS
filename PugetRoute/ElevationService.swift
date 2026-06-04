@@ -155,6 +155,78 @@ enum ElevationService {
         mode == "BICYCLE" || mode == "BICYCLE_RENT"
     }
 
+    /// Single source of truth for the bike duration model:
+    ///
+    ///     duration = distance / pace + climb * climbSecondsPerMeter
+    ///              + intersectionSeconds
+    ///
+    /// `intersectionSeconds` is the seconds-cost from
+    /// signals + stops + yields along the leg. Use
+    /// `intersectionSeconds(forLeg:scaledBy:)` to compute it.
+    ///
+    /// Used by both `stampClientBikeDurations` (plan-time, full
+    /// leg) and `NavigationView.recomputeLiveRemaining` (nav-time,
+    /// active leg's remaining portion + future legs). Keeping both
+    /// sites on the same helper prevents the kind of inconsistency
+    /// we used to have where the plan included the signal penalty
+    /// but the live countdown didn't — making the countdown tick
+    /// faster than wall time. Now adding/removing/tuning any
+    /// duration term is a one-line change in one place.
+    static func bikeLegDuration(
+        distance: Double,
+        climb: Double,
+        intersectionSeconds: Double,
+        pace: BikePace,
+        kind: BikeKind
+    ) -> Double {
+        let speed = kind.metersPerSecond(pace: pace)
+        let baseSecs = distance / max(speed, 0.5)
+        let climbSecs = max(0, climb) * kind.climbSecondsPerMeter
+        return baseSecs + climbSecs + intersectionSeconds
+    }
+
+    /// Compute the seconds cost from intersections along a leg —
+    /// signals (long wait), stops (short wait), yields (very
+    /// short). Two paths inside:
+    ///
+    /// 1. **Proxy-augmented.** When the signal-augment proxy is in
+    ///    front of OTP, each step arrives with per-step
+    ///    `signalCount` / `stopCount` / `yieldCount` populated from
+    ///    an OSM extract. We sum `count × seconds-per` per type.
+    ///    Far more accurate than the flat-rate fallback because it
+    ///    knows where signals actually are.
+    /// 2. **Flat-rate fallback.** When iOS is pointed straight at
+    ///    OTP, the augmented fields are nil. Penalize only the
+    ///    street portion of the leg (off-bike-infra fraction) at
+    ///    `signalPenaltySecondsPerMile`.
+    ///
+    /// `scaledBy` lets nav use the same calculation for the
+    /// *partial* active leg — pass `remainingMeters / totalMeters`
+    /// to get the seconds cost for just the part ahead of the
+    /// rider. Signals/stops are roughly uniformly distributed
+    /// along a leg's polyline so linear scaling matches the
+    /// approximation we already accept for climb.
+    static func intersectionSeconds(forLeg leg: Leg, scaledBy fraction: Double = 1.0) -> Double {
+        let frac = min(1.0, max(0.0, fraction))
+        if let steps = leg.steps,
+           steps.contains(where: {
+               $0.signalCount != nil || $0.stopCount != nil || $0.yieldCount != nil
+           }) {
+            let totalSecs = steps.reduce(0.0) { acc, step in
+                acc
+                    + Double(step.signalCount ?? 0) * Itinerary.secondsPerTrafficSignal
+                    + Double(step.stopCount   ?? 0) * Itinerary.secondsPerStopSign
+                    + Double(step.yieldCount  ?? 0) * Itinerary.secondsPerYield
+            }
+            return totalSecs * frac
+        }
+        // Flat-rate fallback path.
+        let laneFrac = bikeLaneFractionForLeg(leg)
+        let onStreetMeters = leg.distance * (1.0 - laneFrac) * frac
+        let onStreetMiles = onStreetMeters / 1609.34
+        return onStreetMiles * Itinerary.signalPenaltySecondsPerMile
+    }
+
     /// Replace OTP's per-leg bike duration with a client-side estimate
     /// computed from the user's pace and the leg's measured climb:
     ///
@@ -233,56 +305,30 @@ enum ElevationService {
                 // of the user's BikeKind setting: Lime in Seattle is
                 // e-bike-only, so stamping at standard-bike pace would
                 // overestimate duration by ~25% and double-count climb.
+                // Rental legs (Lime bikeshare) force `.electric`
+                // regardless of the user's BikeKind setting: Lime
+                // in Seattle is e-bike-only, so stamping at
+                // standard-bike pace would overestimate duration
+                // by ~25% and double-count climb.
                 let effectiveKind: BikeKind = leg.isRental ? .electric : kind
-                let effectivePaceMps = effectiveKind.metersPerSecond(pace: pace)
-                let flatSecs = leg.distance / effectivePaceMps
-                let climbSecs = climb * effectiveKind.climbSecondsPerMeter
-                // Note: an earlier revision of this code added a flat
-                // 5-minute penalty for legs that traversed the Ballard
-                // Locks spillway. That penalty is gone now — OTP's
-                // `bicycle.walk` config in router-config.json gives
-                // the router a walking-with-bike speed and a mount/
-                // dismount time, applied automatically to any way
-                // tagged `bicycle=dismount` in OSM (locks, Pike Place
-                // arcade, parts of UW campus, etc.). The leg duration
-                // OTP returns already accounts for the dismount time,
-                // so adding our own penalty would double-count.
-                let lockSecs: Double = 0
-                // Signal/stop-sign penalty. Two paths:
-                //
-                //   1. **Proxy-augmented (preferred).** When the signal-
-                //      augment proxy is in front of OTP, each step
-                //      arrives with `signalCount`, `stopCount`, and
-                //      `yieldCount` populated from a static OSM
-                //      extract. We sum `count × seconds-per` per type
-                //      across the leg's steps. Far more accurate than
-                //      the flat-rate fallback because it knows where
-                //      signals actually are (vs. assuming a constant
-                //      density).
-                //
-                //   2. **Flat-rate fallback.** When iOS is pointed
-                //      straight at OTP (no proxy), the augmented fields
-                //      are nil. Use the legacy approximation: penalize
-                //      only the street portion of the leg (off-bike-
-                //      infra fraction) at `signalPenaltySecondsPerMile`.
-                let signalSecs: Double = {
-                    if let steps = leg.steps,
-                       steps.contains(where: { $0.signalCount != nil
-                                            || $0.stopCount != nil
-                                            || $0.yieldCount != nil }) {
-                        return steps.reduce(0.0) { acc, step in
-                            acc
-                                + Double(step.signalCount ?? 0) * Itinerary.secondsPerTrafficSignal
-                                + Double(step.stopCount   ?? 0) * Itinerary.secondsPerStopSign
-                                + Double(step.yieldCount  ?? 0) * Itinerary.secondsPerYield
-                        }
-                    }
-                    let laneFrac = bikeLaneFractionForLeg(leg)
-                    let onStreetMeters = leg.distance * (1.0 - laneFrac)
-                    let onStreetMiles = onStreetMeters / 1609.34
-                    return onStreetMiles * Itinerary.signalPenaltySecondsPerMile
-                }()
-                l.estimatedDurationSeconds = Int((flatSecs + climbSecs + lockSecs + signalSecs).rounded())
+                // Note: an earlier revision added a flat 5-minute
+                // penalty for legs traversing the Ballard Locks
+                // spillway. Gone now — OTP's `bicycle.walk` config
+                // in router-config.json gives a walking-with-bike
+                // speed + dismount time, applied automatically to
+                // any way tagged `bicycle=dismount` in OSM (locks,
+                // Pike Place arcade, parts of UW campus). OTP's
+                // returned duration already includes it; an extra
+                // client penalty would double-count.
+                let intersectionSecs = Self.intersectionSeconds(forLeg: leg)
+                let duration = Self.bikeLegDuration(
+                    distance: leg.distance,
+                    climb: climb,
+                    intersectionSeconds: intersectionSecs,
+                    pace: pace,
+                    kind: effectiveKind
+                )
+                l.estimatedDurationSeconds = Int(duration.rounded())
                 total += climb
                 return l
             }
